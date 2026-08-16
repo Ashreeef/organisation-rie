@@ -1,0 +1,35 @@
+# Data — never commit real or sample data
+data/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+venv/
+env/
+.venv/
+*.ipynb_checkpoints/
+
+# Environment / secrets
+.env
+*.env.local
+secrets.yaml
+config.local.yaml
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Model artifacts (large binaries — track via releases/Domino, not git)
+*.pkl
+*.joblib
+*.h5
+models/*.bin
+
+# Logs
+*.log
+mlruns/
