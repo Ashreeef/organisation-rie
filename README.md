@@ -46,7 +46,7 @@ critique.
 ## Setup local
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Ashreeef/organisation-rie.git
 cd rie-project
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -73,11 +73,10 @@ Voir `docs/CONTRIBUTING.md` pour le détail des conventions.
 ## Données
 
 **Aucune donnée réelle ne doit être commitée dans ce dépôt** — `data/` est
-dans `.gitignore`. Pendant que l'accès Domino (2 licences pour 4 personnes)
-se met en place :
+dans `.gitignore`. Pendant que l'accès Domino se met en place :
 
 - Les données réelles (badges, POS) restent dans l'environnement Domino sécurisé.
-- Le développement hors-Domino se fait sur les données du hackathon
+- Le développement hors-Domino se fait sur les données du hackathon ou les données non-sensibles
   (anonymisées, dans `data/raw/` en local, jamais poussées).
 - Une fois le code validé sur les données hackathon, il est porté et exécuté
   sur les données réelles par les personnes ayant accès à Domino.
