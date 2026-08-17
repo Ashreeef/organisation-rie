@@ -13,6 +13,9 @@ export const metadata: Metadata = {
   title: 'RIE Intelligence — BNP Paribas El Djazaïr',
   description:
     "Plateforme opérationnelle intelligente pour la Restauration Inter-Entreprises (RIE) de BNP Paribas El Djazaïr.",
+  icons: {
+    icon: '/images/bnp-logo-mark.png',
+  },
 };
 
 export default function RootLayout({

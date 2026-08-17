@@ -1,8 +1,24 @@
-# Dashboard — Layer 5
+# RIE Dashboard
 
-Décision à prendre en équipe : **Streamlit** (reste dans ce dépôt, sous
-`dashboard/app.py`) ou **Power BI** (fichier .pbix géré hors-git, partagé via
-Teams/SharePoint — ne pas essayer de versionner un .pbix dans ce dépôt).
+This dashboard is the operational front-end for the RIE project. It gives a clean view of attendance, kitchen activity, procurement, and planning indicators for the BNP Paribas El Djazaïr context.
 
-Une fois la décision prise, remplacer ce README par le code ou la
-documentation de connexion appropriée.
+## Stack
+
+- Next.js
+- TypeScript
+- Tailwind CSS
+- shadcn-inspired UI primitives
+
+## Local development
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+Then open http://localhost:3000.
+
+## Project purpose
+
+This app is designed to support internal monitoring and operational decision-making for the canteen and related resource planning workflows.

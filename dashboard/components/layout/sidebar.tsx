@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -13,7 +14,6 @@ import {
   TrendingUp,
   Banknote,
   Settings,
-  ShieldCheck,
   ChevronLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,7 +30,6 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   TrendingUp,
   Banknote,
   Settings,
-  ShieldCheck,
 };
 
 interface SidebarProps {
@@ -50,8 +49,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     >
       {/* Brand header */}
       <div className="flex h-16 items-center gap-3 border-b border-border px-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <ShieldCheck className="h-5 w-5" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#0d8f6b] ring-1 ring-black/5">
+          <Image
+            src="/images/bnp-logo-mark.png"
+            alt="BNP Paribas logo"
+            width={36}
+            height={36}
+            className="h-full w-full object-cover"
+            priority
+          />
         </div>
         {!collapsed && (
           <div className="min-w-0 animate-fade-in">
@@ -116,7 +122,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {!collapsed && (
             <div className="min-w-0 animate-fade-in">
               <p className="truncate text-sm font-medium text-foreground">
-                Omar OTMANIOU
+                BERBAOUI Ashref
               </p>
               <p className="truncate text-[11px] text-muted-foreground">
                 Gestionnaire RIE · Siège — Alger
