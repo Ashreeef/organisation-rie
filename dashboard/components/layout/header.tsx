@@ -81,7 +81,7 @@ export function Header({ title, description }: HeaderProps) {
 
         {/* Avatar */}
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-          OO
+          BA
         </div>
       </div>
     </header>

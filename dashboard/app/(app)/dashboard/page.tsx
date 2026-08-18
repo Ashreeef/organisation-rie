@@ -48,11 +48,11 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  upcoming: { label: 'Service \u00e0 venir', color: 'text-primary', bg: 'bg-primary/10' },
+  upcoming: { label: 'Service à venir', color: 'text-primary', bg: 'bg-primary/10' },
   in_progress: { label: 'Service en cours', color: 'text-warning', bg: 'bg-warning/10' },
-  awaiting_closure: { label: 'Service termin\u00e9 \u2014 bilan \u00e0 saisir', color: 'text-warning', bg: 'bg-warning/10' },
+  awaiting_closure: { label: 'Service terminé — bilan à saisir', color: 'text-warning', bg: 'bg-warning/10' },
   confirmation_required: { label: 'Confirmation requise', color: 'text-warning', bg: 'bg-warning/10' },
-  closed: { label: 'Journ\u00e9e cl\u00f4tur\u00e9e', color: 'text-success', bg: 'bg-success/10' },
+  closed: { label: 'Journée clôturée', color: 'text-success', bg: 'bg-success/10' },
 };
 
 export default function DashboardPage() {
@@ -114,7 +114,7 @@ export default function DashboardPage() {
 
   const handleSaveResults = () => {
     if (preparedNum === 0) {
-      toast.error('Veuillez saisir le nombre de repas pr\u00e9par\u00e9s.');
+      toast.error('Veuillez saisir le nombre de repas préparés.');
       return;
     }
     api.saveServiceResults({
@@ -124,14 +124,14 @@ export default function DashboardPage() {
       menu: menuItems,
     }).then((c) => {
       setCycle(c);
-      toast.success('Bilan enregistr\u00e9. Veuillez v\u00e9rifier et confirmer.');
+      toast.success('Bilan enregistré. Veuillez vérifier et confirmer.');
     });
   };
 
   const handleConfirm = () => {
     api.confirmService().then((c) => {
       setCycle(c);
-      toast.success('Journ\u00e9e cl\u00f4tur\u00e9e. La pr\u00e9paration de demain est disponible.');
+      toast.success('Journée clôturée. La préparation de demain est disponible.');
     });
   };
 
@@ -174,7 +174,7 @@ export default function DashboardPage() {
         )}
         {status === 'upcoming' && (
           <Button onClick={handleStartService} variant="default">
-            D\u00e9marrer le service
+            Démarrer le service
           </Button>
         )}
       </div>
@@ -183,7 +183,7 @@ export default function DashboardPage() {
       {(status === 'upcoming' || status === 'in_progress') && (
         <>
           <Card className="p-6">
-            <SectionHeader title="Service d'aujourd'hui" description="Informations de pr\u00e9paration" />
+            <SectionHeader title="Service d'aujourd'hui" description="Informations de préparation" />
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="rounded-lg border border-border bg-muted/20 p-4">
                 <Users className="h-5 w-5 text-primary" />
@@ -192,21 +192,21 @@ export default function DashboardPage() {
               </div>
               <div className="rounded-lg border border-border bg-muted/20 p-4">
                 <UtensilsCrossed className="h-5 w-5 text-primary" />
-                <p className="mt-2 text-xs text-muted-foreground">Repas pr\u00e9par\u00e9s</p>
+                <p className="mt-2 text-xs text-muted-foreground">Repas préparés</p>
                 <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(cycle.service.mealsPrepared ?? 0)}</p>
               </div>
               <div className="rounded-lg border border-border bg-muted/20 p-4">
                 <ChefHat className="h-5 w-5 text-primary" />
                 <p className="mt-2 text-xs text-muted-foreground">Menu du jour</p>
                 <p className="mt-1 text-sm font-medium text-foreground">
-                  {menuItems.map((m) => dishName(m.dishId)).join(' · ') || 'Non d\u00e9fini'}
+                  {menuItems.map((m) => dishName(m.dishId)).join(' · ') || 'Non défini'}
                 </p>
               </div>
             </div>
           </Card>
 
           <Card className="p-6">
-            <SectionHeader title="Menu du jour" description="Plats pr\u00e9vus pour aujourd'hui" />
+            <SectionHeader title="Menu du jour" description="Plats prévus pour aujourd'hui" />
             <div className="mt-4 space-y-2">
               {menuItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Aucun menu d\u00e9fini.</p>
@@ -230,7 +230,7 @@ export default function DashboardPage() {
           <div className="mt-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="prepared">Repas pr\u00e9par\u00e9s</Label>
+                <Label htmlFor="prepared">Repas préparés</Label>
                 <Input id="prepared" type="number" placeholder="330" value={mealsPrepared} onChange={(e) => setMealsPrepared(e.target.value)} />
               </div>
               <div className="space-y-2">
@@ -284,7 +284,7 @@ export default function DashboardPage() {
 
             <div className="space-y-2">
               <Label htmlFor="comment">Commentaire (optionnel)</Label>
-              <Textarea id="comment" placeholder="Ex\u00e9g\u00e9se: Forte affluence entre 12h30 et 13h15." value={managerComment} onChange={(e) => setManagerComment(e.target.value)} rows={2} />
+              <Textarea id="comment" placeholder="Exemple: Forte affluence entre 12h30 et 13h15." value={managerComment} onChange={(e) => setManagerComment(e.target.value)} rows={2} />
             </div>
 
             <Button size="lg" className="w-full" onClick={handleSaveResults}>
@@ -298,10 +298,10 @@ export default function DashboardPage() {
       {/* STATE D: Data entered, not confirmed — show review */}
       {status === 'confirmation_required' && (
         <Card className="p-6">
-          <SectionHeader title="V\u00e9rifier le bilan" description="Confirmez les informations saisies" />
+          <SectionHeader title="Vérifier le bilan" description="Confirmez les informations saisies" />
           <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4">
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <ReviewItem label="Pr\u00e9par\u00e9s" value={formatNumber(cycle.service.mealsPrepared ?? 0)} />
+              <ReviewItem label="Préparés" value={formatNumber(cycle.service.mealsPrepared ?? 0)} />
               <ReviewItem label="Servis" value={formatNumber(cycle.service.mealsServed ?? 0)} />
               <ReviewItem label="Restants" value={formatNumber(cycle.service.mealsRemaining ?? 0)} />
               <ReviewItem label="Gaspillage" value={formatPercent(wasteRateCalc)} />
@@ -347,9 +347,9 @@ export default function DashboardPage() {
                 <CheckCircle2 className="h-8 w-8 text-success" />
               </div>
               <div>
-                <p className="text-xl font-bold text-success">Journ\u00e9e cl\u00f4tur\u00e9e</p>
+                <p className="text-xl font-bold text-success">Journée clôturée</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {formatNumber(cycle.service.mealsPrepared ?? 0)} pr\u00e9par\u00e9s \u00b7 {formatNumber(cycle.service.mealsServed ?? 0)} servis \u00b7 {formatNumber(cycle.service.mealsRemaining ?? 0)} restants \u00b7 {formatPercent(wasteRateCalc)} gaspillage
+                  {formatNumber(cycle.service.mealsPrepared ?? 0)} préparés · {formatNumber(cycle.service.mealsServed ?? 0)} servis · {formatNumber(cycle.service.mealsRemaining ?? 0)} restants · {formatPercent(wasteRateCalc)} gaspillage
                 </p>
               </div>
             </div>
@@ -360,7 +360,7 @@ export default function DashboardPage() {
             <Card className="border-primary/20 bg-gradient-to-br from-primary/[0.04] to-card p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-primary">Pr\u00e9paration du lendemain</p>
+                  <p className="text-sm font-semibold text-primary">Préparation du lendemain</p>
                   <p className="mt-1 text-xs text-muted-foreground">Mardi 18 ao\u00fbt 2026</p>
                 </div>
                 <Badge variant="outline" className="gap-1.5 border-success/30 bg-success/5 text-success">
@@ -375,7 +375,7 @@ export default function DashboardPage() {
                 </div>
                 <ChevronRight className="h-6 w-6 text-muted-foreground" />
                 <div className="text-center">
-                  <p className="text-xs font-medium uppercase tracking-wide text-primary">Repas recommand\u00e9s</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-primary">Repas recommandés</p>
                   <p className="mt-1 text-5xl font-bold text-primary">{formatNumber(tomorrowForecast.recommendedMeals)}</p>
                 </div>
               </div>
@@ -383,7 +383,7 @@ export default function DashboardPage() {
                 <Link href="/prepare">
                   <Button size="lg" className="gap-2">
                     <ChefHat className="h-5 w-5" />
-                    Pr\u00e9parer le service de demain
+                    Préparer le service de demain
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
@@ -398,7 +398,7 @@ export default function DashboardPage() {
             ))}
           </div>
           <Card className="p-6">
-            <SectionHeader title="Pr\u00e9visions vs consommation r\u00e9elle" description="14 derniers jours ouvr\u00e9s" />
+            <SectionHeader title="Prévisions vs consommation réelle" description="14 derniers jours ouvrés" />
             <div className="mt-4">
               <ForecastChart data={chartData} />
             </div>
@@ -410,7 +410,7 @@ export default function DashboardPage() {
       <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
         <Info className="h-3.5 w-3.5 shrink-0" />
         <p>
-          Donn\u00e9es de d\u00e9monstration \u2014 La recommandation pour demain sera disponible apr\u00e8s la cl\u00f4ture du service d'aujourd'hui.
+          Données de démonstration — La recommandation pour demain sera disponible après la clôture du service d'aujourd'hui.
         </p>
       </div>
     </div>
@@ -459,7 +459,7 @@ function MenuEditor({
               {categories.find((c) => c.id === item.categoryId)?.name ?? 'Autre'}
             </p>
             <p className="text-sm font-medium text-foreground">
-              {dishes.find((d) => d.id === item.dishId)?.name ?? 'Non renseign\u00e9'}
+              {dishes.find((d) => d.id === item.dishId)?.name ?? 'Non renseigné'}
             </p>
           </div>
           <Button size="sm" variant="ghost" onClick={() => removeElement(i)}>
@@ -469,7 +469,7 @@ function MenuEditor({
       ))}
 
       <div className="border-t border-border pt-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ajouter un \u00e9l\u00e9ment</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ajouter un élément</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <Select
             value={newCategory}
