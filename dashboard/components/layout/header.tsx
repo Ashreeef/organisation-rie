@@ -75,7 +75,7 @@ export function Header({ title, description }: HeaderProps) {
                 <span className="sr-only">Notifications</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>5 alertes opérationnelles</TooltipContent>
+            <TooltipContent>6 alertes opérationnelles</TooltipContent>
           </Tooltip>
         </TooltipProvider>
 
