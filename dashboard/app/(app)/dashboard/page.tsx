@@ -147,7 +147,7 @@ export default function DashboardPage() {
     api.updateServiceStatus('awaiting_closure').then((c) => setCycle(c));
   };
 
-  const dishName = (dishId: string) => dishes.find((d) => d.id === dishId)?.name ?? 'Non renseign\u00e9';
+  const dishName = (dishId: string) => dishes.find((d) => d.id === dishId)?.name ?? 'Non renseigné';
   const categoryName = (catId: string) => categories.find((c) => c.id === catId)?.name ?? 'Autre';
 
   return (
@@ -187,7 +187,7 @@ export default function DashboardPage() {
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="rounded-lg border border-border bg-muted/20 p-4">
                 <Users className="h-5 w-5 text-primary" />
-                <p className="mt-2 text-xs text-muted-foreground">Employ\u00e9s attendus</p>
+                <p className="mt-2 text-xs text-muted-foreground">Employés attendus</p>
                 <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(cycle.service.employeesExpected)}</p>
               </div>
               <div className="rounded-lg border border-border bg-muted/20 p-4">
@@ -209,7 +209,7 @@ export default function DashboardPage() {
             <SectionHeader title="Menu du jour" description="Plats prévus pour aujourd'hui" />
             <div className="mt-4 space-y-2">
               {menuItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucun menu d\u00e9fini.</p>
+                <p className="text-sm text-muted-foreground">Aucun menu défini.</p>
               ) : (
                 menuItems.map((item, i) => (
                   <div key={i} className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-4 py-3">
@@ -226,7 +226,7 @@ export default function DashboardPage() {
       {/* STATE C: Service finished, data not entered — show entry form */}
       {status === 'awaiting_closure' && (
         <Card className="p-6">
-          <SectionHeader title="Bilan du service" description="Saisissez les r\u00e9sultats du jour" />
+          <SectionHeader title="Bilan du service" description="Saisissez les résultats du jour" />
           <div className="mt-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -328,7 +328,7 @@ export default function DashboardPage() {
           <div className="mt-3 flex gap-3">
             <Button onClick={handleConfirm} className="flex-1">
               <CheckCircle2 className="mr-2 h-4 w-4" />
-              Confirmer et cl\u00f4turer
+              Confirmer et clôturer
             </Button>
             <Button onClick={handleEdit} variant="outline" className="flex-1">
               <Pencil className="mr-2 h-4 w-4" />
@@ -361,7 +361,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-primary">Préparation du lendemain</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Mardi 18 ao\u00fbt 2026</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Mardi 18 août 2026</p>
                 </div>
                 <Badge variant="outline" className="gap-1.5 border-success/30 bg-success/5 text-success">
                   <CheckCircle2 className="h-3 w-3" />
@@ -370,7 +370,7 @@ export default function DashboardPage() {
               </div>
               <div className="mt-6 flex flex-wrap items-center justify-center gap-6 lg:gap-10">
                 <div className="text-center">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employ\u00e9s attendus</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employés attendus</p>
                   <p className="mt-1 text-4xl font-bold text-foreground">{formatNumber(tomorrowForecast.expectedPresence)}</p>
                 </div>
                 <ChevronRight className="h-6 w-6 text-muted-foreground" />
@@ -479,7 +479,7 @@ function MenuEditor({
             }}
           >
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Cat\u00e9gorie" />
+              <SelectValue placeholder="Catégorie" />
             </SelectTrigger>
             <SelectContent>
               {categories.map((c) => (
