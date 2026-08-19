@@ -1,12 +1,15 @@
-// Mock API service layer.
-// These functions simulate async calls to a Python/ML backend.
-// To connect a real backend later, replace the bodies of these functions
-// with fetch() calls to your API endpoints (e.g. Domino Data Lab).
+'use client';
+
+/**
+ * API layer — single entry point for all data.
+ *
+ * Operational data (today/tomorrow/bilan) → service-store (localStorage)
+ * Forecast data → FastAPI backend, with mock fallback
+ * Charts/history → CSV files (train.csv, submission.csv)
+ * Other domains → mock-data.ts
+ */
 
 import {
-  tomorrowForecast,
-  dashboardKPIs,
-  forecastVsActual,
   operationalAlerts,
   wasteDays,
   wasteSummary,
@@ -14,16 +17,15 @@ import {
   weeklyMenuPlan,
   procurementItems,
   procurementSummary,
-  forecastHistory,
   modelMetrics,
   modelFamilies,
   dataSources,
   financialKPIs,
-  attendanceData,
   reportTemplates,
 } from '@/lib/mock-data';
 import type {
   ForecastResult,
+  PlanningInputs,
   KPI,
   ForecastVsActualPoint,
   OperationalAlert,
@@ -40,187 +42,601 @@ import type {
   AttendancePoint,
   ReportTemplate,
   WasteEntry,
-  DailyCycle,
   Dish,
   DishCategory,
   MenuElement,
-  ServiceStatus,
 } from '@/lib/types';
 import {
-  getDailyCycle,
-  updateServiceStatus,
-  saveServiceResults,
-  confirmService,
-  getDishes,
-  getDishCategories,
-  addDish,
-  addDishCategory,
-  getDailyMenu,
-  saveDailyMenu,
-} from '@/lib/operational-store';
+  initStore,
+  todayKey,
+  getStatusLabel,
+  setActualMeals,
+  setPlannedMeals,
+  setTodayMenu,
+  submitBilan,
+  confirmBilan,
+  advanceStatus,
+  type ServiceStore,
+  type ServiceStatus,
+  type TodayState,
+} from '@/lib/service-store';
 
-function delay<T>(data: T, ms = 250): Promise<T> {
+/* -------------------------------------------------------------------------- */
+/*  Backend helpers                                                            */
+/* -------------------------------------------------------------------------- */
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+function delay<T>(data: T, ms = 200): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), ms));
 }
 
+async function apiGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  return res.json();
+}
+
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  return res.json();
+}
+
+/* -------------------------------------------------------------------------- */
+/*  CSV loading (for chart/history data)                                       */
+/* -------------------------------------------------------------------------- */
+
+type SubmissionRow = { date: string; predictedMeals: number };
+type ForecastPoint = { date: string; predictedMeals: number; expectedPresence: number };
+type ForecastBundle = {
+  points: ForecastPoint[];
+  actualByDate: Map<string, number>;
+};
+
+let forecastBundlePromise: Promise<ForecastBundle> | null = null;
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i += 1; }
+      else { inQuotes = !inQuotes; }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) { out.push(current); current = ''; continue; }
+    current += ch;
+  }
+  out.push(current);
+  return out;
+}
+
+function parseCsv(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  const header = parseCsvLine(lines[0]);
+  const rows: Record<string, string>[] = [];
+  for (const line of lines.slice(1)) {
+    const fields = parseCsvLine(line);
+    const row: Record<string, string> = {};
+    for (let i = 0; i < header.length; i++) { row[header[i]] = fields[i] ?? ''; }
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function fetchCsv(path: string): Promise<Record<string, string>[]> {
+  const response = await fetch(path, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Unable to fetch ${path}: ${response.status}`);
+  return parseCsv(await response.text());
+}
+
+async function loadForecastBundle(): Promise<ForecastBundle> {
+  if (!forecastBundlePromise) {
+    forecastBundlePromise = (async () => {
+      const [submissionRaw, testRaw, trainRaw] = await Promise.all([
+        fetchCsv('/data/submission.csv'),
+        fetchCsv('/data/test.csv'),
+        fetchCsv('/data/train.csv'),
+      ]);
+
+      const submissionRows: SubmissionRow[] = submissionRaw.map((r) => ({
+        date: r.Date,
+        predictedMeals: Number(r.employees_count) || 0,
+      }));
+
+      const testPresence = new Map<string, number>();
+      for (const row of testRaw) { testPresence.set(row.Date, Number(row.office_present) || 0); }
+
+      const points: ForecastPoint[] = submissionRows.map((r) => ({
+        date: r.date,
+        predictedMeals: r.predictedMeals,
+        expectedPresence: testPresence.get(r.date) ?? 0,
+      }));
+
+      const groupedActuals = new Map<string, { sum: number; count: number }>();
+      for (const row of trainRaw) {
+        const date = row.Date;
+        const val = Number(row.employees_count);
+        if (!Number.isFinite(val)) continue;
+        const prev = groupedActuals.get(date) ?? { sum: 0, count: 0 };
+        groupedActuals.set(date, { sum: prev.sum + val, count: prev.count + 1 });
+      }
+      const actualByDate = new Map<string, number>();
+      groupedActuals.forEach((agg, date) => {
+        actualByDate.set(date, Math.round(agg.sum / Math.max(agg.count, 1)));
+      });
+
+      return { points, actualByDate };
+    })();
+  }
+  return forecastBundlePromise;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Store access (init on first call)                                          */
+/* -------------------------------------------------------------------------- */
+
+let _store: ServiceStore | null = null;
+
+function getStore(): ServiceStore {
+  if (!_store) _store = initStore();
+  return _store;
+}
+
+function updateStore(updater: (s: ServiceStore) => ServiceStore): ServiceStore {
+  _store = updater(getStore());
+  return _store;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Mapping helpers                                                            */
+/* -------------------------------------------------------------------------- */
+
+function mapBackendForecast(data: {
+  date: string; predicted_meals: number; confidence_lower: number;
+  confidence_upper: number; confidence_level: string; recommended_meals: number;
+  expected_presence: number; attendance_ratio: number; recommendation_note: string;
+}): ForecastResult {
+  return {
+    date: data.date,
+    predictedMeals: data.predicted_meals,
+    confidenceLower: data.confidence_lower,
+    confidenceUpper: data.confidence_upper,
+    confidenceLevel: data.confidence_level as 'high' | 'medium' | 'low',
+    recommendedMeals: data.recommended_meals,
+    expectedPresence: data.expected_presence,
+    attendanceRatio: data.attendance_ratio,
+    recommendationNote: data.recommendation_note,
+  };
+}
+
+const fallbackForecast = (dateStr: string): ForecastResult => ({
+  date: dateStr,
+  predictedMeals: 310,
+  confidenceLower: 285,
+  confidenceUpper: 335,
+  confidenceLevel: 'medium',
+  recommendedMeals: 322,
+  expectedPresence: 487,
+  attendanceRatio: 0.64,
+  recommendationNote: 'Mode dégradé — backend indisponible',
+});
+
+/* -------------------------------------------------------------------------- */
+/*  Public API                                                                 */
+/* -------------------------------------------------------------------------- */
+
 export const api = {
-  // ── Forecast ────────────────────────────────────────
-  getTomorrowForecast(): Promise<ForecastResult> {
-    // GET /api/forecast/tomorrow
-    return delay(tomorrowForecast);
+
+  /* ── Store init ─────────────────────────────────────────── */
+
+  init(): ServiceStore {
+    return getStore();
   },
 
-  getDashboardKPIs(): Promise<KPI[]> {
-    // GET /api/kpis/dashboard
-    return delay(dashboardKPIs);
+  /* ── Forecast (from FastAPI backend) ────────────────────── */
+
+  async getTodayForecast(): Promise<ForecastResult> {
+    try {
+      const data = await apiGet<{
+        date: string; predicted_meals: number; confidence_lower: number;
+        confidence_upper: number; confidence_level: string; recommended_meals: number;
+        expected_presence: number; attendance_ratio: number; recommendation_note: string;
+      }>('/api/forecast/today');
+      return mapBackendForecast(data);
+    } catch {
+      return fallbackForecast(todayKey());
+    }
   },
 
-  getForecastVsActual(days: 7 | 14 | 30 = 14): Promise<ForecastVsActualPoint[]> {
-    // GET /api/forecast/accuracy?days=N
-    return delay(forecastVsActual.slice(-days));
+  async getTomorrowForecast(): Promise<ForecastResult> {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dateStr = tomorrow.toISOString().slice(0, 10);
+    try {
+      const data = await apiPost<{
+        date: string; predicted_meals: number; confidence_lower: number;
+        confidence_upper: number; confidence_level: string; recommended_meals: number;
+        expected_presence: number; attendance_ratio: number; recommendation_note: string;
+      }>('/api/forecast', { date: dateStr });
+      return mapBackendForecast(data);
+    } catch {
+      const today = await api.getTodayForecast();
+      return { ...today, date: dateStr };
+    }
   },
 
-  // ── Alerts ───────────────────────────────────────────
-  getAlerts(): Promise<OperationalAlert[]> {
-    // GET /api/alerts
-    return delay(operationalAlerts);
+  /* ── Today operations (via service-store) ───────────────── */
+
+  getTodayState(): TodayState {
+    return getStore().today;
   },
 
-  // ── Waste ───────────────────────────────────────────
-  getWasteDays(): Promise<WasteDay[]> {
-    // GET /api/waste/daily
-    return delay(wasteDays);
+  getStatus(): ServiceStatus {
+    return getStore().today.status;
   },
 
-  getWasteSummary(): Promise<WasteSummary> {
-    // GET /api/waste/summary
-    return delay(wasteSummary);
+  getStatusLabel(): string {
+    return getStatusLabel(getStore().today.status);
   },
 
+  async startService(): Promise<TodayState> {
+    updateStore((s) => advanceStatus(s, 'service'));
+    return getStore().today;
+  },
+
+  async endService(): Promise<TodayState> {
+    updateStore((s) => advanceStatus(s, 'bilan_a_saisir'));
+    return getStore().today;
+  },
+
+  async submitBilanToday(data: { prepared: number; served: number; comment?: string }): Promise<TodayState> {
+    const remaining = Math.max(0, data.prepared - data.served);
+    const wasteRate = data.prepared > 0 ? (remaining / data.prepared) * 100 : 0;
+    updateStore((s) =>
+      submitBilan(s, {
+        date: todayKey(),
+        prepared: data.prepared,
+        served: data.served,
+        remaining,
+        wasteRate: Math.round(wasteRate * 10) / 10,
+        comment: data.comment,
+        menu: [],
+      })
+    );
+    return getStore().today;
+  },
+
+  async confirmBilanToday(): Promise<TodayState> {
+    updateStore((s) => confirmBilan(s));
+    return getStore().today;
+  },
+
+  async editBilanToday(): Promise<TodayState> {
+    updateStore((s) => advanceStatus(s, 'bilan_a_saisir'));
+    return getStore().today;
+  },
+
+  setActualMealsServed(count: number): void {
+    updateStore((s) => setActualMeals(s, count));
+  },
+
+  /* ── Tomorrow preparation (via service-store) ───────────── */
+
+  async getTomorrowState() {
+    return getStore().tomorrow;
+  },
+
+  async updateTomorrowInputs(patch: { presence?: number; menuId?: string }): Promise<PlanningInputs> {
+    const store = getStore();
+    if (store.tomorrow.locked) {
+      return { expectedPresence: store.tomorrow.presenceInput, selectedMenuId: store.tomorrow.menu?.id ?? '' };
+    }
+    if (patch.presence !== undefined) {
+      updateStore((s) => {
+        const updated = { ...s, tomorrow: { ...s.tomorrow, presenceInput: patch.presence! } };
+        localStorage.setItem('rie-service-store', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    if (patch.menuId) {
+      const menus = menuItems;
+      const selected = menus.find((m) => m.id === patch.menuId) ?? null;
+      updateStore((s) => {
+        const updated = { ...s, tomorrow: { ...s.tomorrow, menu: selected } };
+        localStorage.setItem('rie-service-store', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    return { expectedPresence: getStore().tomorrow.presenceInput, selectedMenuId: getStore().tomorrow.menu?.id ?? '' };
+  },
+
+  async getPlanningInputs(): Promise<PlanningInputs> {
+    const store = getStore();
+    return {
+      expectedPresence: store.tomorrow.presenceInput || 487,
+      selectedMenuId: store.tomorrow.menu?.id ?? menuItems.find((m) => m.isRecommended)?.id ?? '',
+    };
+  },
+
+  async updatePlanningInputs(values: Partial<PlanningInputs>): Promise<PlanningInputs> {
+    const store = getStore();
+    if (values.expectedPresence !== undefined) {
+      updateStore((s) => {
+        const updated = { ...s, tomorrow: { ...s.tomorrow, presenceInput: values.expectedPresence! } };
+        localStorage.setItem('rie-service-store', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    if (values.selectedMenuId) {
+      const selected = menuItems.find((m) => m.id === values.selectedMenuId) ?? null;
+      updateStore((s) => {
+        const updated = { ...s, tomorrow: { ...s.tomorrow, menu: selected } };
+        localStorage.setItem('rie-service-store', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    return { expectedPresence: getStore().tomorrow.presenceInput, selectedMenuId: getStore().tomorrow.menu?.id ?? '' };
+  },
+
+  /* ── Dashboard KPIs (simplified — no ML jargon) ─────────── */
+
+  async getDashboardKPIs(): Promise<KPI[]> {
+    const f = await api.getTodayForecast();
+    const kpis: KPI[] = [
+      {
+        id: 'expected-presence',
+        label: 'Employés attendus',
+        value: `${f.expectedPresence}`,
+        unit: 'employés',
+        trend: { direction: 'flat', value: 'Aujourd\'hui', label: 'fréquentation prévue' },
+        variant: 'default',
+      },
+      {
+        id: 'recommended-meals',
+        label: 'Repas à préparer',
+        value: `${f.recommendedMeals}`,
+        unit: 'repas',
+        trend: { direction: 'up', value: '+4%', label: 'marge de sécurité' },
+        variant: 'success',
+      },
+      {
+        id: 'avg-waste',
+        label: 'Gaspillage',
+        value: '5,8',
+        unit: '%',
+        trend: { direction: 'down', value: '-1,8 pts', label: 'vs mois précéd.' },
+        variant: 'success',
+      },
+      {
+        id: 'estimated-savings',
+        label: 'Économies ce mois',
+        value: '+42 500',
+        unit: 'DZD',
+        trend: { direction: 'up', value: '+4%', label: 'vs mois précéd.' },
+        variant: 'success',
+      },
+    ];
+    return delay(kpis);
+  },
+
+  /* ── Chart data (from CSV — deterministic) ──────────────── */
+
+  async getForecastVsActual(days: 7 | 14 | 30 = 14): Promise<ForecastVsActualPoint[]> {
+    const bundle = await loadForecastBundle();
+    const points: ForecastVsActualPoint[] = bundle.points.map((p) => ({
+      date: p.date,
+      shortDate: formatShortDate(p.date),
+      forecast: p.predictedMeals,
+      actual: bundle.actualByDate.get(p.date) ?? null,
+    }));
+    return delay(points.slice(-days));
+  },
+
+  /* ── History (from CSV — deterministic) ─────────────────── */
+
+  async getForecastHistory(): Promise<ForecastHistoryEntry[]> {
+    const bundle = await loadForecastBundle();
+    const entries: ForecastHistoryEntry[] = bundle.points.map((p) => {
+      const actual = bundle.actualByDate.get(p.date) ?? 0;
+      const ecart = actual > 0 ? actual - p.predictedMeals : 0;
+      const errorPct = actual > 0 ? Math.round((Math.abs(ecart) / Math.max(p.predictedMeals, 1)) * 1000) / 10 : 0;
+      const status: 'bon' | 'acceptable' | 'mauvais' =
+        actual === 0 ? 'acceptable' : errorPct < 5 ? 'bon' : errorPct < 10 ? 'acceptable' : 'mauvais';
+      return { id: `hist-${p.date}`, date: p.date, presence: p.expectedPresence, forecast: p.predictedMeals, actual, ecart, errorPct, status };
+    });
+    return delay(entries);
+  },
+
+  /* ── Alerts ─────────────────────────────────────────────── */
+
+  getAlerts(): Promise<OperationalAlert[]> { return delay(operationalAlerts); },
+
+  /* ── Waste ─────────────────────────────────────────────── */
+
+  getWasteDays(): Promise<WasteDay[]> { return delay(wasteDays); },
+  getWasteSummary(): Promise<WasteSummary> { return delay(wasteSummary); },
   submitWasteEntry(entry: WasteEntry): Promise<{ success: boolean }> {
-    // POST /api/waste/entry
     console.log('[mock] Waste entry submitted:', entry);
     return delay({ success: true });
   },
 
-  // ── Menus ────────────────────────────────────────────
-  getMenus(): Promise<MenuItem[]> {
-    // GET /api/menus
-    return delay(menuItems);
-  },
+  /* ── Menus ──────────────────────────────────────────────── */
 
-  getWeeklyMenuPlan(): Promise<{ day: string; menuId: string; menuName: string }[]> {
-    // GET /api/menus/weekly
-    return delay(weeklyMenuPlan);
-  },
+  getMenus(): Promise<MenuItem[]> { return delay(menuItems); },
+  getWeeklyMenuPlan(): Promise<{ day: string; menuId: string; menuName: string }[]> { return delay(weeklyMenuPlan); },
 
-  // ── Procurement ──────────────────────────────────────
-  getProcurementItems(): Promise<ProcurementItem[]> {
-    // GET /api/procurement/items
-    return delay(procurementItems);
-  },
+  /* ── Procurement ────────────────────────────────────────── */
 
-  getProcurementSummary(): Promise<ProcurementSummary> {
-    // GET /api/procurement/summary
-    return delay(procurementSummary);
-  },
-
+  getProcurementItems(): Promise<ProcurementItem[]> { return delay(procurementItems); },
+  getProcurementSummary(): Promise<ProcurementSummary> { return delay(procurementSummary); },
   generateOrder(): Promise<{ orderId: string; totalCost: number }> {
-    // POST /api/procurement/order
     return delay({ orderId: `CMD-${Date.now()}`, totalCost: procurementSummary.totalCost });
   },
 
-  // ── History ──────────────────────────────────────────
-  getForecastHistory(): Promise<ForecastHistoryEntry[]> {
-    // GET /api/forecast/history
-    return delay(forecastHistory);
+  /* ── Model metrics (AI team page only) ──────────────────── */
+
+  async getModelMetrics(): Promise<ModelMetrics> {
+    try {
+      const data = await apiGet<{
+        version: string; total_models: number; lgbm_count: number; xgb_count: number;
+        lgbm_alphas: number[]; xgb_alphas: number[];
+        oof_metrics: { 'MAE (repas)': number; 'RMSE (repas)': number; 'Asym. Cost': number; 'MAE (ratio)': number };
+        feature_count: number;
+      }>('/api/model/metrics');
+
+      return {
+        version: `v${data.version}`,
+        lastTrainingDate: new Date().toISOString().slice(0, 10),
+        lastPredictionDate: new Date().toISOString().slice(0, 10),
+        evaluationMetric: 'Asymmetric Cost',
+        predictionError: `${data.oof_metrics['MAE (repas)']} repas`,
+        dataFreshness: 'En ligne',
+        driftIndicator: 'stable',
+        featureAvailability: 100,
+        accuracy: Math.round((1 - data.oof_metrics['Asym. Cost']) * 100),
+        mae: data.oof_metrics['MAE (repas)'],
+        rmse: data.oof_metrics['RMSE (repas)'],
+      };
+    } catch { return modelMetrics; }
   },
 
-  // ── Model ────────────────────────────────────────────
-  getModelMetrics(): Promise<ModelMetrics> {
-    // GET /api/model/metrics
-    return delay(modelMetrics);
+  async getModelFamilies(): Promise<ModelFamily[]> {
+    try {
+      const data = await apiGet<{
+        lgbm_count: number; xgb_count: number; lgbm_alphas: number[]; xgb_alphas: number[];
+        oof_metrics: { 'Asym. Cost': number };
+      }>('/api/model/metrics');
+      return [
+        { name: 'LightGBM', modelCount: data.lgbm_count, contribution: 72, description: `Quantile regression - ${data.lgbm_alphas.length} alphas x 3 seeds` },
+        { name: 'XGBoost', modelCount: data.xgb_count, contribution: 28, description: `Quantile regression - ${data.xgb_alphas.length} alphas x 3 seeds` },
+      ];
+    } catch { return modelFamilies; }
   },
 
-  getModelFamilies(): Promise<ModelFamily[]> {
-    // GET /api/model/families
-    return delay(modelFamilies);
+  /* ── Data sources ───────────────────────────────────────── */
+
+  getDataSources(): Promise<DataSource[]> { return delay(dataSources); },
+
+  /* ── Financial ──────────────────────────────────────────── */
+
+  getFinancialKPIs(): Promise<FinancialKPI> { return delay(financialKPIs); },
+
+  /* ── Attendance ─────────────────────────────────────────── */
+
+  async getAttendanceData(): Promise<AttendancePoint[]> {
+    const bundle = await loadForecastBundle();
+    const points: AttendancePoint[] = bundle.points.map((p) => ({
+      date: p.date,
+      shortDate: formatShortDate(p.date),
+      presence: p.expectedPresence,
+      meals: p.predictedMeals,
+      ratio: p.expectedPresence > 0 ? p.predictedMeals / p.expectedPresence : 0,
+    }));
+    return delay(points);
   },
 
-  // ── Data sources ─────────────────────────────────────
-  getDataSources(): Promise<DataSource[]> {
-    // GET /api/datasources
-    return delay(dataSources);
-  },
+  /* ── Reports ────────────────────────────────────────────── */
 
-  // ── Financial ────────────────────────────────────────
-  getFinancialKPIs(): Promise<FinancialKPI> {
-    // GET /api/finance/kpis
-    return delay(financialKPIs);
-  },
-
-  // ── Attendance ───────────────────────────────────────
-  getAttendanceData(): Promise<AttendancePoint[]> {
-    // GET /api/attendance
-    return delay(attendanceData);
-  },
-
-  // ── Reports ───────────────────────────────────────────
-  getReportTemplates(): Promise<ReportTemplate[]> {
-    // GET /api/reports/templates
-    return delay(reportTemplates);
-  },
-
+  getReportTemplates(): Promise<ReportTemplate[]> { return delay(reportTemplates); },
   generateReport(reportId: string): Promise<{ url: string }> {
-    // POST /api/reports/generate
     console.log('[mock] Report generated:', reportId);
     return delay({ url: `#mock-report-${reportId}` });
   },
 
-  // ── Daily operational cycle ─────────────────────────
-  getDailyCycle(): Promise<DailyCycle> {
-    return delay(getDailyCycle());
+  /* ── Backend operations (legacy) ────────────────────────── */
+
+  async getTodayOperations(): Promise<{
+    date: string; status: string;
+    operational: { prepared: number; served: number; remaining: number; waste: number; waste_rate: number; comment: string | null } | null;
+  }> {
+    try {
+      return await apiGet('/api/operations/today');
+    } catch {
+      return { date: todayKey(), status: 'no_entry', operational: null };
+    }
   },
 
-  updateServiceStatus(status: ServiceStatus): Promise<DailyCycle> {
-    return delay(updateServiceStatus(status));
+  async submitOperation(entry: { date: string; prepared: number; served: number; comment?: string; menu?: MenuElement[] }): Promise<{ success: boolean }> {
+    try {
+      const remaining = Math.max(0, entry.prepared - entry.served);
+      const wasteRate = entry.prepared > 0 ? (remaining / entry.prepared) * 100 : 0;
+      await apiPost('/api/operations', {
+        date: entry.date,
+        prepared: entry.prepared,
+        served: entry.served,
+        remaining,
+        waste: remaining,
+        waste_rate: Math.round(wasteRate * 10) / 10,
+        menu: entry.menu ?? [],
+        comment: entry.comment ?? null,
+      });
+      return { success: true };
+    } catch (err) {
+      console.error('Failed to submit operation:', err);
+      return { success: false };
+    }
   },
 
-  saveServiceResults(values: {
-    mealsPrepared: number;
-    mealsServed: number;
-    managerComment?: string;
-    menu: MenuElement[];
-  }): Promise<DailyCycle> {
-    return delay(saveServiceResults(values));
-  },
+  /* ── Dishes & categories ────────────────────────────────── */
 
-  confirmService(): Promise<DailyCycle> {
-    return delay(confirmService());
-  },
-
-  // ── Dishes & categories ──────────────────────────────
   getDishes(): Promise<Dish[]> {
-    return delay(getDishes());
+    const defaultDishes: Dish[] = [
+      { id: 'dish-salade', name: 'Salade / Soupe', categoryId: 'entree', active: true },
+      { id: 'dish-escalope', name: 'Escalope grillée', categoryId: 'plat-principal', active: true },
+      { id: 'dish-escalope-panne', name: 'Escalope pannée sauce piquante', categoryId: 'plat-principal', active: true },
+      { id: 'dish-puree', name: 'Pomme purée', categoryId: 'accompagnement', active: true },
+      { id: 'dish-spaghetti', name: 'Spaghetti bolognaise', categoryId: 'plat-principal', active: true, historicalPopularity: 81, wasteRate: 7.8 },
+      { id: 'dish-poulet', name: 'Poulet rôti', categoryId: 'plat-principal', active: true, historicalPopularity: 92, wasteRate: 4.2 },
+      { id: 'dish-rechta', name: 'Rechta', categoryId: 'accompagnement', active: true, historicalPopularity: 90, wasteRate: 4.2 },
+    ];
+    return delay(defaultDishes);
   },
 
   getDishCategories(): Promise<DishCategory[]> {
-    return delay(getDishCategories());
+    const defaultCategories: DishCategory[] = [
+      { id: 'entree', name: 'Entrée' },
+      { id: 'plat-principal', name: 'Plat principal' },
+      { id: 'accompagnement', name: 'Accompagnement' },
+      { id: 'dessert', name: 'Dessert' },
+      { id: 'soupe', name: 'Soupe' },
+      { id: 'salade', name: 'Salade' },
+      { id: 'boisson', name: 'Boisson' },
+      { id: 'autre', name: 'Autre' },
+    ];
+    return delay(defaultCategories);
   },
 
   addDish(dish: Omit<Dish, 'id' | 'active' | 'isNew'>): Promise<Dish> {
-    return delay(addDish(dish));
+    return delay({ ...dish, id: `dish-${Date.now()}`, active: true, isNew: true });
   },
 
   addDishCategory(name: string): Promise<DishCategory> {
-    return delay(addDishCategory(name));
+    return delay({ id: `category-${Date.now()}`, name: name.trim() });
   },
 
   getDailyMenu(): Promise<MenuElement[]> {
-    return delay(getDailyMenu());
+    return delay([
+      { categoryId: 'entree', dishId: 'dish-salade' },
+      { categoryId: 'plat-principal', dishId: 'dish-escalope' },
+      { categoryId: 'accompagnement', dishId: 'dish-puree' },
+    ]);
   },
 
   saveDailyMenu(items: MenuElement[]): Promise<MenuElement[]> {
-    return delay(saveDailyMenu(items));
+    return delay(items);
   },
 };

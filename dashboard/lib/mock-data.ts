@@ -394,7 +394,7 @@ export const modelFamilies: ModelFamily[] = [
   {
     name: 'LightGBM',
     modelCount: 24,
-    contribution: 62,
+    contribution: 72,
     description: 'Modèles de gradient boosting — performants sur données tabulaires et calendrier.',
   },
   {
@@ -402,12 +402,6 @@ export const modelFamilies: ModelFamily[] = [
     modelCount: 9,
     contribution: 28,
     description: 'Modèles de boosting régularisés — robustesse sur les valeurs extrêmes.',
-  },
-  {
-    name: 'CatBoost',
-    modelCount: 3,
-    contribution: 10,
-    description: 'Modèles gérant nativement les variables catégorielles (menus, jours fériés).',
   },
 ];
 

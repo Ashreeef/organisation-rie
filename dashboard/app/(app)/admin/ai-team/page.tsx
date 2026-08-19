@@ -176,12 +176,12 @@ export default function AITeamPage() {
       <Card className="p-6">
         <SectionHeader
           title="Architecture de l'ensemble"
-          description="36 modèles combinés (LightGBM + XGBoost + CatBoost)"
+          description="33 modèles combinés (LightGBM + XGBoost)"
         />
         <div className="mt-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
           <Layers className="h-8 w-8 text-primary" />
           <div>
-            <p className="text-2xl font-bold text-primary">36 modèles</p>
+            <p className="text-2xl font-bold text-primary">33 modèles</p>
             <p className="text-sm text-muted-foreground">
               Ensemble avec calibration post-modèle (isotonic regression)
             </p>

@@ -7,8 +7,8 @@ import type {
   ServiceStatus,
 } from '@/lib/types';
 
-export const OPERATIONAL_DATE = '2026-08-17';
-export const TOMORROW_DATE = '2026-08-18';
+export const OPERATIONAL_DATE = '2024-01-01';
+export const TOMORROW_DATE = '2024-01-02';
 
 const cycleKey = `rie-cycle-${OPERATIONAL_DATE}`;
 const dishesKey = 'rie-dishes-v1';

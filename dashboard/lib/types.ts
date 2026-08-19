@@ -23,6 +23,11 @@ export interface ForecastResult {
   recommendationNote: string;
 }
 
+export interface PlanningInputs {
+  expectedPresence: number;
+  selectedMenuId: string;
+}
+
 export interface KPI {
   id: string;
   label: string;
@@ -172,6 +177,28 @@ export type ServiceStatus =
   | 'awaiting_closure'
   | 'confirmation_required'
   | 'closed';
+
+export interface BilanRecord {
+  date: string;
+  prepared: number;
+  served: number;
+  remaining: number;
+  wasteRate: number;
+  comment?: string;
+  menu: MenuElement[];
+  confirmedAt?: string;
+}
+
+export interface OperationalEntry {
+  id: string;
+  date: string;
+  presence: number;
+  forecast: number;
+  actual: number;
+  menu: string;
+  status: string;
+  bilan?: BilanRecord | null;
+}
 
 export interface DishCategory {
   id: string;

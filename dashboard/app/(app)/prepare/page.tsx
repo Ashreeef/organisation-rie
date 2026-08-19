@@ -31,12 +31,12 @@ import {
   Package,
   CheckCircle2,
   ChevronRight,
-  ChevronDown,
   Pencil,
   Star,
   TrendingDown,
   Coins,
   Check,
+  Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -56,6 +56,8 @@ export default function PreparePage() {
   const [menus, setMenus] = React.useState<MenuItem[]>([]);
   const [procurement, setProcurement] = React.useState<ProcurementItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [todayClosed, setTodayClosed] = React.useState(false);
+  const [presenceInput, setPresenceInput] = React.useState<number>(0);
 
   // Override state
   const [mealCount, setMealCount] = React.useState(340);
@@ -68,19 +70,40 @@ export default function PreparePage() {
   const [selectedMenuId, setSelectedMenuId] = React.useState('menu-1');
   const [validated, setValidated] = React.useState(false);
 
+  const refreshForecast = React.useCallback(async (presence: number, menuId: string) => {
+    await api.updatePlanningInputs({ expectedPresence: presence, selectedMenuId: menuId });
+    const f = await api.getTomorrowForecast();
+    setForecast(f);
+    if (!isEditing && !hasOverridden) {
+      setMealCount(f.recommendedMeals);
+    }
+  }, [isEditing, hasOverridden]);
+
   React.useEffect(() => {
+    const store = api.init();
+    const isClosed = store.today.status === 'cloturee';
+    setTodayClosed(isClosed);
+
     Promise.all([
       api.getTomorrowForecast(),
       api.getMenus(),
       api.getProcurementItems(),
-    ]).then(([f, m, p]) => {
+      api.getPlanningInputs(),
+    ]).then(([f, m, p, planning]) => {
       setForecast(f);
       setMenus(m);
       setProcurement(p);
       setMealCount(f.recommendedMeals);
+      setPresenceInput(planning.expectedPresence);
+      setSelectedMenuId(planning.selectedMenuId);
       setLoading(false);
     });
   }, []);
+
+  React.useEffect(() => {
+    if (loading || presenceInput <= 0 || !selectedMenuId) return;
+    refreshForecast(presenceInput, selectedMenuId);
+  }, [loading, presenceInput, selectedMenuId, refreshForecast]);
 
   if (loading || !forecast) {
     return <Skeleton className="h-96 w-full rounded-lg" />;
@@ -89,9 +112,7 @@ export default function PreparePage() {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowLabel = tomorrow.toLocaleDateString('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
+    weekday: 'long', day: 'numeric', month: 'long',
   });
 
   const selectedMenu = menus.find((m) => m.id === selectedMenuId);
@@ -117,11 +138,41 @@ export default function PreparePage() {
     { num: 5, label: 'Validation', icon: CheckCircle2, done: validated },
   ];
 
+  // ── Locked state: today not closed yet ───────────────────
+  if (!todayClosed) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Préparer demain</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {tomorrowLabel}
+          </p>
+        </div>
+        <Card className="flex flex-col items-center justify-center p-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <Lock className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <p className="mt-4 text-lg font-semibold text-foreground">Journée d'aujourd'hui non clôturée</p>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Vous devez d'abord clôturer la journée en cours avant de préparer le service de demain.
+            Rendez-vous sur l'accueil pour saisir le bilan.
+          </p>
+          <Link href="/dashboard">
+            <Button className="mt-6">
+              Retour à l'accueil
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground capitalize">
+        <h1 className="text-2xl font-bold text-foreground">
           Préparer demain — {tomorrowLabel}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -158,19 +209,34 @@ export default function PreparePage() {
       {/* Step 1 — Attendance */}
       <Card className="p-6">
         <StepHeader num={1} icon={Users} title="Fréquentation" />
-        <div className="mt-4 flex items-center gap-4">
+        <div className="mt-4 flex flex-wrap items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
             <Users className="h-8 w-8 text-primary" />
           </div>
-          <div>
+          <div className="flex-1">
             <p className="text-3xl font-bold text-foreground">
               {formatNumber(forecast.expectedPresence)} employés attendus
             </p>
-            <div className="mt-1 flex items-center gap-2 text-sm">
-              <span className="h-2 w-2 rounded-full bg-success" />
-              <span className="text-muted-foreground">
-                Donnée disponible — planning RH et contrôle d'accès
-              </span>
+            <div className="mt-3 flex max-w-sm items-end gap-2">
+              <div className="flex-1">
+                <Label htmlFor="presence-input" className="text-xs text-muted-foreground">
+                  Présents estimés
+                </Label>
+                <Input
+                  id="presence-input"
+                  type="number"
+                  min={0}
+                  value={presenceInput}
+                  onChange={(e) => setPresenceInput(Number(e.target.value) || 0)}
+                />
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => refreshForecast(presenceInput, selectedMenuId)}
+                disabled={presenceInput <= 0}
+              >
+                Mettre à jour
+              </Button>
             </div>
           </div>
         </div>
@@ -247,6 +313,7 @@ export default function PreparePage() {
                     Modifier
                   </button>
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">{forecast.recommendationNote}</p>
               </>
             )}
           </div>
@@ -460,7 +527,7 @@ export default function PreparePage() {
               Annuler
             </Button>
             <Button onClick={handleOverrideConfirm} disabled={!overrideReason}>
-              Confirmer l'ajustement
+              Confirmer l&apos;ajustement
             </Button>
           </DialogFooter>
         </DialogContent>
