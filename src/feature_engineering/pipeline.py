@@ -213,12 +213,17 @@ def add_lag_features(
     train_df: pd.DataFrame, test_df: pd.DataFrame
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     train = train_df.copy().sort_values("Date").reset_index(drop=True)
-    test  = test_df.copy().sort_values("Date").reset_index(drop=True)
 
-    full_series = pd.concat([
-        train[["Date", "employees_count", "ratio"]],
-        test[["Date"]].assign(employees_count=np.nan, ratio=np.nan)
-    ], ignore_index=True).sort_values("Date").reset_index(drop=True)
+    has_test = test_df is not None and len(test_df) > 0 and "Date" in test_df.columns
+    test = test_df.copy().sort_values("Date").reset_index(drop=True) if has_test else test_df
+
+    if has_test:
+        full_series = pd.concat([
+            train[["Date", "employees_count", "ratio"]],
+            test[["Date"]].assign(employees_count=np.nan, ratio=np.nan)
+        ], ignore_index=True).sort_values("Date").reset_index(drop=True)
+    else:
+        full_series = train[["Date", "employees_count", "ratio"]].copy()
 
     full_series["employees_count"] = full_series["employees_count"].ffill()
     full_series["ratio"]           = full_series["ratio"].ffill()
@@ -234,7 +239,8 @@ def add_lag_features(
     full_series["roll_ratio_mean_7"] = full_series["ratio"].shift(1).rolling(7, min_periods=1).mean()
 
     train = train.merge(full_series[["Date"] + LAG_COLS], on="Date", how="left")
-    test  = test.merge(full_series[["Date"] + LAG_COLS], on="Date", how="left")
+    if has_test:
+        test  = test.merge(full_series[["Date"] + LAG_COLS], on="Date", how="left")
 
     return train, test
 
@@ -252,7 +258,7 @@ def build_feature_columns(train_daily: pd.DataFrame) -> List[str]:
 
 
 def run_pipeline(
-    train_raw: pd.DataFrame, test_raw: pd.DataFrame
+    train_raw: pd.DataFrame, test_raw: pd.DataFrame = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
     """
     Execute the full FE pipeline:
@@ -266,39 +272,53 @@ def run_pipeline(
       8. Build final feature list
 
     Returns (train_df, test_df, feature_cols).
+    If test_raw is None, test_df is an empty DataFrame.
     """
     # 1. Clean & dedup
     train_daily = clean_and_deduplicate(train_raw, has_target=True)
-    test_daily  = clean_and_deduplicate(test_raw, has_target=False)
 
-    # 2. Calendar
-    train_daily = add_calendar_features(train_daily)
-    test_daily  = add_calendar_features(test_daily)
+    if test_raw is not None:
+        test_daily = clean_and_deduplicate(test_raw, has_target=False)
 
-    # 3. Holidays
-    train_daily = add_holiday_features(train_daily)
-    test_daily  = add_holiday_features(test_daily)
+        # 2. Calendar
+        train_daily = add_calendar_features(train_daily)
+        test_daily  = add_calendar_features(test_daily)
 
-    # 4. Weather (fit on train)
-    train_daily, month_temp_means, temp_mean, temp_std = add_weather_features(train_daily)
-    test_daily, *_ = add_weather_features(
-        test_daily,
-        month_temp_means=month_temp_means,
-        temp_mean=temp_mean,
-        temp_std=temp_std,
-    )
+        # 3. Holidays
+        train_daily = add_holiday_features(train_daily)
+        test_daily  = add_holiday_features(test_daily)
 
-    # 5. Headcount
-    train_daily = add_headcount_features(train_daily)
-    test_daily  = add_headcount_features(test_daily)
+        # 4. Weather (fit on train)
+        train_daily, month_temp_means, temp_mean, temp_std = add_weather_features(train_daily)
+        test_daily, *_ = add_weather_features(
+            test_daily,
+            month_temp_means=month_temp_means,
+            temp_mean=temp_mean,
+            temp_std=temp_std,
+        )
 
-    # 6. Ratio target
-    train_daily["ratio"] = (
-        train_daily["employees_count"] / train_daily["office_present"]
-    ).astype(float)
+        # 5. Headcount
+        train_daily = add_headcount_features(train_daily)
+        test_daily  = add_headcount_features(test_daily)
 
-    # 7. Lags
-    train_daily, test_daily = add_lag_features(train_daily, test_daily)
+        # 6. Ratio target
+        train_daily["ratio"] = (
+            train_daily["employees_count"] / train_daily["office_present"]
+        ).astype(float)
+
+        # 7. Lags
+        train_daily, test_daily = add_lag_features(train_daily, test_daily)
+    else:
+        # Process train only
+        train_daily = add_calendar_features(train_daily)
+        train_daily = add_holiday_features(train_daily)
+        train_daily, *_ = add_weather_features(train_daily)
+        train_daily = add_headcount_features(train_daily)
+        train_daily["ratio"] = (
+            train_daily["employees_count"] / train_daily["office_present"]
+        ).astype(float)
+        train_daily, _ = add_lag_features(train_daily, pd.DataFrame())
+        test_daily = pd.DataFrame()
 
     # 8. Feature columns
     feature_cols = build_feature_columns(train_daily)
