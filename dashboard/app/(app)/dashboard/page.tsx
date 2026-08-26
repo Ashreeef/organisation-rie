@@ -173,8 +173,8 @@ export default function DashboardPage() {
 
           <div className="mt-6 grid grid-cols-3 gap-6 text-center">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employés attendus</p>
-              <p className="mt-1 text-4xl font-bold text-foreground">{formatNumber(forecast.employeesCount)}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employés au bureau</p>
+              <p className="mt-1 text-4xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-primary">Repas à préparer</p>
@@ -207,8 +207,8 @@ export default function DashboardPage() {
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="rounded-lg border border-border bg-muted/20 p-4">
               <Users className="h-5 w-5 text-primary" />
-              <p className="mt-2 text-xs text-muted-foreground">Employés attendus</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.employeesCount)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">Employés au bureau</p>
+              <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
             </div>
             <div className="rounded-lg border border-border bg-muted/20 p-4">
               <UtensilsCrossed className="h-5 w-5 text-primary" />
@@ -340,8 +340,8 @@ export default function DashboardPage() {
             <SectionHeader title="Demain" description="Prévision pour demain" />
             <div className="mt-4 grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-xs text-muted-foreground">Employés attendus</p>
-                <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.employeesCount)}</p>
+                <p className="text-xs text-muted-foreground">Employés au bureau</p>
+                <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
               </div>
               <div>
                 <p className="text-xs text-primary">Repas recommandés</p>

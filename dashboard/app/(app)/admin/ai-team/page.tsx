@@ -27,6 +27,7 @@ import { SectionHeader } from '@/components/shared/section-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { api } from '@/lib/api';
 import type { ModelMetrics, ModelFamily, DataSource } from '@/lib/types';
+import { formatNumber } from '@/lib/format';
 import { GitBranch, Clock, Activity, Database, Layers, AlertTriangle } from 'lucide-react';
 
 const driftConfig = {
@@ -130,13 +131,13 @@ export default function AITeamPage() {
             <div className="rounded-lg border border-border bg-muted/30 p-4">
               <p className="text-xs text-muted-foreground">MAE</p>
               <p className="mt-1 text-2xl font-semibold text-foreground">
-                {metrics.mae} <span className="text-sm font-normal text-muted-foreground">repas</span>
+                {formatNumber(metrics.mae)} <span className="text-sm font-normal text-muted-foreground">repas</span>
               </p>
             </div>
             <div className="rounded-lg border border-border bg-muted/30 p-4">
               <p className="text-xs text-muted-foreground">RMSE</p>
               <p className="mt-1 text-2xl font-semibold text-foreground">
-                {metrics.rmse} <span className="text-sm font-normal text-muted-foreground">repas</span>
+                {formatNumber(metrics.rmse)} <span className="text-sm font-normal text-muted-foreground">repas</span>
               </p>
             </div>
             <div className="rounded-lg border border-border bg-muted/30 p-4">

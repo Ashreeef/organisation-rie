@@ -94,7 +94,7 @@ export default function PreparePage() {
       setMenus(m);
       setProcurement(p);
       setMealCount(f.recommendedMeals);
-      setPresenceInput(planning.expectedPresence);
+      setPresenceInput(planning.expectedPresence || f.officePresent);
       setSelectedMenuId(planning.selectedMenuId);
       setLoading(false);
     });
@@ -215,12 +215,15 @@ export default function PreparePage() {
           </div>
           <div className="flex-1">
             <p className="text-3xl font-bold text-foreground">
-              {formatNumber(forecast.employeesCount)} employés attendus
+              {formatNumber(forecast.employeesCount)} repas prévus
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Présence bureau estimée : {formatNumber(forecast.officePresent)} employés · Taux participation : {(forecast.predictedRatio * 100).toFixed(1).replace('.', ',')}%
             </p>
             <div className="mt-3 flex max-w-sm items-end gap-2">
               <div className="flex-1">
                 <Label htmlFor="presence-input" className="text-xs text-muted-foreground">
-                  Présents estimés
+                  Présence bureau manuelle
                 </Label>
                 <Input
                   id="presence-input"
@@ -462,7 +465,7 @@ export default function PreparePage() {
             <div>
               <p className="text-xl font-bold text-success">Préparation validée</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Demain — {formatNumber(forecast.employeesCount)} employés · {formatNumber(mealCount)} repas · {selectedMenu?.name}
+                Demain — {formatNumber(forecast.officePresent)} employés · {formatNumber(mealCount)} repas · {selectedMenu?.name}
               </p>
             </div>
           </div>
@@ -474,7 +477,11 @@ export default function PreparePage() {
               </p>
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Employés attendus</span>
+                  <span className="text-muted-foreground">Employés au bureau</span>
+                  <span className="font-medium text-foreground">{formatNumber(forecast.officePresent)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Repas prévus</span>
                   <span className="font-medium text-foreground">{formatNumber(forecast.employeesCount)}</span>
                 </div>
                 <div className="flex justify-between">

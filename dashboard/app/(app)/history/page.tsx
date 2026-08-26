@@ -79,11 +79,17 @@ export default function HistoryPage() {
   }, [history, sortKey, sortDir, statusFilter, search]);
 
   const completed = history.filter((e) => e.actual > 0);
-  const avgForecast = Math.round(completed.reduce((s, e) => s + e.forecast, 0) / completed.length);
-  const avgActual = Math.round(completed.reduce((s, e) => s + e.actual, 0) / completed.length);
-  const avgWaste = 5.4;
+  const avgForecast = completed.length > 0
+    ? Math.round(completed.reduce((s, e) => s + e.forecast, 0) / completed.length)
+    : 0;
+  const avgActual = completed.length > 0
+    ? Math.round(completed.reduce((s, e) => s + e.actual, 0) / completed.length)
+    : 0;
+  const avgWaste = completed.length > 0
+    ? Math.round(completed.reduce((s, e) => s + (e.actual > 0 ? Math.abs(e.ecart) / e.actual * 100 : 0), 0) / completed.length * 10) / 10
+    : 0;
 
-  const errorChartData = completed.map((e) => ({
+  const errorChartData = history.map((e) => ({
     shortDate: e.date.slice(5),
     error: e.errorPct,
   }));
@@ -152,10 +158,16 @@ export default function HistoryPage() {
         </div>
         <div>
           <p className="text-sm font-semibold text-foreground">
-            Les prévisions sont globalement proches de la consommation réelle
+            {completed.length > 0
+              ? avgActual > 0 && avgForecast > 0
+                ? `Écart moyen : ${Math.abs(avgForecast - avgActual)} repas/jour`
+                : 'Les prévisions sont globalement proches de la consommation réelle'
+              : 'Données historiques chargées — consommation réelle en attente'}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            L'écart moyen entre prévision et consommation est de moins de 6 repas par jour.
+            {completed.length > 0
+              ? `Basé sur ${completed.length} jour(s) avec données réelles.`
+              : `${history.length} prévisions chargées. Les données réelles seront ajoutées prochainement.`}
           </p>
         </div>
       </Card>

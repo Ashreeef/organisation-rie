@@ -47,37 +47,42 @@ export default function PerformancePage() {
 
   if (loading || !financial) return <Skeleton className="h-96 w-full rounded-lg" />;
 
+  const totalMeals = attendance.reduce((s, a) => s + a.meals, 0);
+  const avgRatio = attendance.length > 0
+    ? attendance.reduce((s, a) => s + a.ratio, 0) / attendance.length
+    : 0;
+  const avgWasteRate = 5.4;
   const managementKPIs: KPI[] = [
     {
       id: 'meals-served',
-      label: 'Repas servis (mois)',
-      value: '7 842',
+      label: 'Repas prévus (période)',
+      value: formatNumber(totalMeals),
       unit: 'repas',
-      trend: { direction: 'up', value: '+5%', label: 'vs mois précéd.' },
+      trend: { direction: 'flat', value: `${attendance.length} jours`, label: 'données chargées' },
       variant: 'default',
     },
     {
       id: 'waste-rate',
-      label: 'Taux de gaspillage',
-      value: '5,8',
+      label: 'Taux participation moyen',
+      value: (avgRatio * 100).toFixed(1).replace('.', ','),
       unit: '%',
-      trend: { direction: 'down', value: '-1,8 pts', label: 'vs mois précéd.' },
-      variant: 'success',
+      trend: { direction: 'flat', value: 'Moyenne', label: 'bureau → cantine' },
+      variant: 'default',
     },
     {
       id: 'savings',
-      label: 'Économies estimées',
-      value: '+42 500',
-      unit: 'DZD',
-      trend: { direction: 'up', value: '+4%', label: 'vs mois précéd.' },
+      label: 'Gaspillage moyen estimé',
+      value: avgWasteRate.toFixed(1).replace('.', ','),
+      unit: '%',
+      trend: { direction: 'down', value: '-1,8 pts', label: 'vs planification manuelle' },
       variant: 'success',
     },
     {
       id: 'avoided-waste',
       label: 'Gaspillage évité',
-      value: '12,3',
-      unit: '%',
-      trend: { direction: 'up', value: '+2,1 pts', label: 'vs mois précéd.' },
+      value: '2,1',
+      unit: 'pts',
+      trend: { direction: 'up', value: '+2,1 pts', label: 'vs méthodes précédentes' },
       variant: 'success',
     },
   ];

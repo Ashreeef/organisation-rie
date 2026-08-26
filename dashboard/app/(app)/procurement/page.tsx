@@ -25,15 +25,19 @@ export default function ProcurementPage() {
   const [summary, setSummary] = React.useState<ProcurementSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [orderGenerated, setOrderGenerated] = React.useState(false);
+  const [recommendedMeals, setRecommendedMeals] = React.useState(0);
 
   React.useEffect(() => {
-    Promise.all([api.getProcurementItems(), api.getProcurementSummary()]).then(
-      ([i, s]) => {
-        setItems(i);
-        setSummary(s);
-        setLoading(false);
-      }
-    );
+    Promise.all([
+      api.getProcurementItems(),
+      api.getProcurementSummary(),
+      api.getTomorrowForecast(),
+    ]).then(([i, s, f]) => {
+      setItems(i);
+      setSummary(s);
+      setRecommendedMeals(f.recommendedMeals);
+      setLoading(false);
+    });
   }, []);
 
   const handleGenerateOrder = () => {
@@ -58,7 +62,7 @@ export default function ProcurementPage() {
               Commande pour demain
             </p>
             <p className="text-xs text-muted-foreground">
-              Basé sur 340 repas recommandés — Poulet rôti + Rechta
+              Basé sur {formatNumber(recommendedMeals)} repas recommandés — Preparation demain
             </p>
           </div>
         </div>

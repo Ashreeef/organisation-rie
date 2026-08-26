@@ -407,8 +407,8 @@ export const api = {
     const kpis: KPI[] = [
       {
         id: 'expected-presence',
-        label: 'Employés attendus',
-        value: `${f.employeesCount}`,
+        label: 'Employés au bureau',
+        value: `${f.officePresent}`,
         unit: 'employés',
         trend: { direction: 'flat', value: 'Aujourd\'hui', label: 'fréquentation prévue' },
         variant: 'default',
@@ -423,19 +423,19 @@ export const api = {
       },
       {
         id: 'avg-waste',
-        label: 'Gaspillage',
-        value: '5,8',
+        label: 'Taux de participation',
+        value: `${(f.predictedRatio * 100).toFixed(1).replace('.', ',')}`,
         unit: '%',
-        trend: { direction: 'down', value: '-1,8 pts', label: 'vs mois précéd.' },
-        variant: 'success',
+        trend: { direction: 'flat', value: 'Prévision', label: 'participation bureau → cantine' },
+        variant: 'default',
       },
       {
         id: 'estimated-savings',
-        label: 'Économies ce mois',
-        value: '+42 500',
-        unit: 'DZD',
-        trend: { direction: 'up', value: '+4%', label: 'vs mois précéd.' },
-        variant: 'success',
+        label: 'Repas prévus',
+        value: `${f.employeesCount}`,
+        unit: 'repas',
+        trend: { direction: 'flat', value: 'Calibré', label: 'après calibration DOW' },
+        variant: 'default',
       },
     ];
     return delay(kpis);
@@ -459,12 +459,13 @@ export const api = {
   async getForecastHistory(): Promise<ForecastHistoryEntry[]> {
     const bundle = await loadForecastBundle();
     const entries: ForecastHistoryEntry[] = bundle.points.map((p) => {
-      const actual = bundle.actualByDate.get(p.date) ?? 0;
-      const ecart = actual > 0 ? actual - p.predictedMeals : 0;
-      const errorPct = actual > 0 ? Math.round((Math.abs(ecart) / Math.max(p.predictedMeals, 1)) * 1000) / 10 : 0;
+      const actual = bundle.actualByDate.get(p.date) ?? null;
+      const hasActual = actual !== null && actual > 0;
+      const ecart = hasActual ? actual! - p.predictedMeals : null;
+      const errorPct = hasActual ? Math.round((Math.abs(ecart!) / Math.max(p.predictedMeals, 1)) * 1000) / 10 : null;
       const status: 'bon' | 'acceptable' | 'mauvais' =
-        actual === 0 ? 'acceptable' : errorPct < 5 ? 'bon' : errorPct < 10 ? 'acceptable' : 'mauvais';
-      return { id: `hist-${p.date}`, date: p.date, officePresent: p.expectedPresence, employeesCount: p.predictedMeals, forecast: p.predictedMeals, actual, ecart, errorPct, status };
+        !hasActual ? 'acceptable' : errorPct! < 5 ? 'bon' : errorPct! < 10 ? 'acceptable' : 'mauvais';
+      return { id: `hist-${p.date}`, date: p.date, officePresent: p.expectedPresence, employeesCount: p.predictedMeals, forecast: p.predictedMeals, actual: actual ?? 0, ecart: ecart ?? 0, errorPct: errorPct ?? 0, status };
     });
     return delay(entries);
   },
@@ -511,11 +512,11 @@ export const api = {
         lastTrainingDate: new Date().toISOString().slice(0, 10),
         lastPredictionDate: new Date().toISOString().slice(0, 10),
         evaluationMetric: 'AsymmetricCost',
-        predictionError: `${data.oof_metrics['MAE (repas)']} repas`,
+        predictionError: `${data.oof_metrics['Asym. Cost'].toFixed(1)} repas`,
         dataFreshness: 'En ligne',
         driftIndicator: 'stable',
         featureAvailability: 100,
-        accuracy: Math.round((1 - data.oof_metrics['Asym. Cost']) * 100),
+        accuracy: Math.round(Math.max(0, (1 - data.oof_metrics['MAE (repas)'] / 310) * 100)),
         mae: data.oof_metrics['MAE (repas)'],
         rmse: data.oof_metrics['RMSE (repas)'],
         asymmetricCost: data.oof_metrics['Asym. Cost'],
