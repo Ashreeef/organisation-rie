@@ -9,7 +9,7 @@ import { SectionHeader } from '@/components/shared/section-header';
 import { api } from '@/lib/api';
 import type { ProcurementItem, ProcurementSummary } from '@/lib/types';
 import { formatNumber, formatDZD } from '@/lib/format';
-import { Package, FileText, CheckCircle2 } from 'lucide-react';
+import { Package, FileText, CheckCircle2, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -131,6 +131,14 @@ export default function ProcurementPage() {
           )}
         </div>
       </Card>
+
+      {/* Reference data notice */}
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <Info className="h-3.5 w-3.5 shrink-0" />
+        <p>
+          Données de référence — Les ingrédients et prix seront connectés au système ERP et aux catalogues fournisseurs.
+        </p>
+      </div>
     </div>
   );
 }

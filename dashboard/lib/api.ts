@@ -474,10 +474,50 @@ export const api = {
 
   getAlerts(): Promise<OperationalAlert[]> { return delay(operationalAlerts); },
 
-  /* ── Waste ─────────────────────────────────────────────── */
+  /* ── Waste (from backend operations) ────────────────────── */
 
-  getWasteDays(): Promise<WasteDay[]> { return delay(wasteDays); },
-  getWasteSummary(): Promise<WasteSummary> { return delay(wasteSummary); },
+  async getWasteDays(): Promise<WasteDay[]> {
+    try {
+      const entries = await apiGet<{ date: string; prepared: number; served: number; waste: number; waste_rate: number; menu: { categoryId: string; dishId: string }[] }[]>('/api/operations');
+      if (entries.length === 0) return [];
+      return entries
+        .filter((e) => e.prepared > 0)
+        .slice(-14)
+        .map((e) => ({
+          date: e.date,
+          shortDate: formatShortDate(e.date),
+          prepared: e.prepared,
+          served: e.served,
+          wasted: e.waste,
+          wasteRate: e.waste_rate,
+          menu: e.menu?.map((m: { dishId: string }) => m.dishId).join(', ') || 'Non défini',
+        }));
+    } catch {
+      return wasteDays;
+    }
+  },
+
+  async getWasteSummary(): Promise<WasteSummary> {
+    try {
+      const entries = await apiGet<{ date: string; prepared: number; served: number; waste: number; waste_rate: number }[]>('/api/operations');
+      if (entries.length === 0) return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
+      const recent = entries.filter((e) => e.prepared > 0).slice(-30);
+      if (recent.length === 0) return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
+      const totalPrepared = recent.reduce((s, e) => s + e.prepared, 0);
+      const totalServed = recent.reduce((s, e) => s + e.served, 0);
+      const totalWasted = recent.reduce((s, e) => s + e.waste, 0);
+      const avgWasteRate = totalPrepared > 0 ? Math.round((totalWasted / totalPrepared) * 1000) / 10 : 0;
+      return {
+        prepared: totalPrepared,
+        served: totalServed,
+        wasted: totalWasted,
+        wasteRate: avgWasteRate,
+        trend: { direction: 'down', value: `- ${recent.length} jours`, label: 'données réelles' },
+      };
+    } catch {
+      return wasteSummary;
+    }
+  },
   submitWasteEntry(entry: WasteEntry): Promise<{ success: boolean }> {
     console.log('[mock] Waste entry submitted:', entry);
     return delay({ success: true });

@@ -8,7 +8,7 @@ import { SectionHeader } from '@/components/shared/section-header';
 import { api } from '@/lib/api';
 import type { MenuItem } from '@/lib/types';
 import { formatDZD } from '@/lib/format';
-import { Star, ChefHat } from 'lucide-react';
+import { Star, ChefHat, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const wasteLabels: { threshold: number; label: string; color: string }[] = [
@@ -162,6 +162,15 @@ export default function MenusPage() {
           })}
         </div>
       </Card>
+
+      {/* Reference catalog notice */}
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <Info className="h-3.5 w-3.5 shrink-0" />
+        <p>
+          Catalogue de référence — Les menus et leurs caractéristiques seront connectés
+          à la base de données du RIE.
+        </p>
+      </div>
     </div>
   );
 }
