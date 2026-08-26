@@ -215,7 +215,7 @@ export default function PreparePage() {
           </div>
           <div className="flex-1">
             <p className="text-3xl font-bold text-foreground">
-              {formatNumber(forecast.expectedPresence)} employés attendus
+              {formatNumber(forecast.employeesCount)} employés attendus
             </p>
             <div className="mt-3 flex max-w-sm items-end gap-2">
               <div className="flex-1">
@@ -462,7 +462,7 @@ export default function PreparePage() {
             <div>
               <p className="text-xl font-bold text-success">Préparation validée</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Demain — {formatNumber(forecast.expectedPresence)} employés · {formatNumber(mealCount)} repas · {selectedMenu?.name}
+                Demain — {formatNumber(forecast.employeesCount)} employés · {formatNumber(mealCount)} repas · {selectedMenu?.name}
               </p>
             </div>
           </div>
@@ -475,7 +475,7 @@ export default function PreparePage() {
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Employés attendus</span>
-                  <span className="font-medium text-foreground">{formatNumber(forecast.expectedPresence)}</span>
+                  <span className="font-medium text-foreground">{formatNumber(forecast.employeesCount)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Repas à préparer</span>

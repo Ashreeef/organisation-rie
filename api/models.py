@@ -4,15 +4,22 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class BlendScores(BaseModel):
+    lgb: float
+    xgb: float
+    catboost: float
+
+
 class TodayForecast(BaseModel):
     date: str
-    predicted_meals: int
+    office_present: int
+    predicted_ratio: float
+    employees_count: int
+    blend_scores: BlendScores
+    recommended_meals: int
     confidence_lower: int
     confidence_upper: int
     confidence_level: str
-    recommended_meals: int
-    expected_presence: int
-    attendance_ratio: float
     recommendation_note: str
 
 
@@ -44,10 +51,13 @@ class OperationalResponse(BaseModel):
 class ModelMetricsResponse(BaseModel):
     version: str
     total_models: int
-    lgbm_count: int
+    lgb_count: int
     xgb_count: int
-    lgbm_alphas: list[float]
-    xgb_alphas: list[float]
+    catboost_count: int
+    lgb_weight: float
+    xgb_weight: float
+    catboost_weight: float
+    calibration_lambda: float
     oof_metrics: dict
     feature_count: int
 

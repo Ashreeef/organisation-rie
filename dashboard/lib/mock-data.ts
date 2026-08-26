@@ -31,13 +31,14 @@ function shortDate(iso: string): string {
 // ── Tomorrow's forecast ──────────────────────────────────
 export const tomorrowForecast: ForecastResult = {
   date: daysAgo(-1),
-  predictedMeals: 324,
+  officePresent: 312,
+  predictedRatio: 0.665,
+  employeesCount: 487,
+  blendScores: { lgb: 0.018, xgb: 0.089, catboost: 0.893 },
+  recommendedMeals: 340,
   confidenceLower: 295,
   confidenceUpper: 355,
   confidenceLevel: 'high',
-  recommendedMeals: 340,
-  expectedPresence: 487,
-  attendanceRatio: 0.665,
   recommendationNote:
     'La fréquentation prévue est de 487 employés. Nous recommandons de préparer 340 repas afin de limiter le risque de pénurie.',
 };
@@ -354,8 +355,9 @@ function generateHistory(): ForecastHistoryEntry[] {
     const dow = d.getDay();
     if (dow === 0 || dow === 6) continue;
     const iso = d.toISOString().slice(0, 10);
-    const presence = 440 + Math.round(Math.sin(i * 0.3) * 40) + (i % 4) * 8;
-    const forecast = 300 + Math.round(Math.cos(i * 0.25) * 25) + (i % 3) * 6;
+    const officePresent = 300 + Math.round(Math.sin(i * 0.3) * 40) + (i % 4) * 8;
+    const employeesCount = 300 + Math.round(Math.cos(i * 0.25) * 25) + (i % 3) * 6;
+    const forecast = employeesCount;
     const actual = i <= 1 ? 0 : forecast + ((i % 5) - 2) * 8;
     const ecart = actual - forecast;
     const errorPct = actual === 0 ? 0 : Math.round((Math.abs(ecart) / forecast) * 1000) / 10;
@@ -363,7 +365,8 @@ function generateHistory(): ForecastHistoryEntry[] {
     entries.push({
       id: `hist-${iso}`,
       date: iso,
-      presence,
+      officePresent,
+      employeesCount,
       forecast,
       actual: actual === 0 ? 0 : actual,
       ecart,
@@ -380,7 +383,7 @@ export const modelMetrics: ModelMetrics = {
   version: 'v2.4.1',
   lastTrainingDate: '2026-08-10 03:00',
   lastPredictionDate: '2026-08-17 06:15',
-  evaluationMetric: 'MAE',
+  evaluationMetric: 'AsymmetricCost',
   predictionError: '18,3 repas',
   dataFreshness: '12 min',
   driftIndicator: 'stable',
@@ -388,20 +391,31 @@ export const modelMetrics: ModelMetrics = {
   accuracy: 94.2,
   mae: 18.3,
   rmse: 24.7,
+  asymmetricCost: 18.98,
+  catboostCount: 3,
+  lgbCount: 15,
+  xgbCount: 15,
+  calibrationLambda: 0.726,
 };
 
 export const modelFamilies: ModelFamily[] = [
   {
     name: 'LightGBM',
-    modelCount: 24,
-    contribution: 72,
-    description: 'Modèles de gradient boosting — performants sur données tabulaires et calendrier.',
+    modelCount: 15,
+    contribution: 2,
+    description: 'Gradient boosting — seed × alpha variants.',
   },
   {
     name: 'XGBoost',
-    modelCount: 9,
-    contribution: 28,
-    description: 'Modèles de boosting régularisés — robustesse sur les valeurs extrêmes.',
+    modelCount: 15,
+    contribution: 9,
+    description: 'Regularized boosting — seed × alpha variants.',
+  },
+  {
+    name: 'CatBoost',
+    modelCount: 3,
+    contribution: 89,
+    description: 'Ordered boosting — dominant blend weight.',
   },
 ];
 
@@ -504,14 +518,15 @@ function generateAttendance(): AttendancePoint[] {
     const dow = d.getDay();
     if (dow === 0 || dow === 6) continue;
     const iso = d.toISOString().slice(0, 10);
-    const presence = 450 + Math.round(Math.sin(i * 0.35) * 35) + (i % 4) * 6;
-    const meals = Math.round(presence * (0.62 + (i % 3) * 0.02));
+    const officePresent = 300 + Math.round(Math.sin(i * 0.35) * 35) + (i % 4) * 6;
+    const employeesCount = Math.round(officePresent * (0.62 + (i % 3) * 0.02));
     points.push({
       date: iso,
       shortDate: shortDate(iso),
-      presence,
-      meals,
-      ratio: Math.round((meals / presence) * 1000) / 10,
+      officePresent,
+      employeesCount,
+      meals: employeesCount,
+      ratio: Math.round((employeesCount / officePresent) * 1000) / 10,
     });
   }
   return points;

@@ -1,5 +1,7 @@
 // Core domain types for the RIE Intelligence platform.
-// These types model the data that would eventually come from a Python/ML backend.
+// Reflects the two-stage cascade ML pipeline:
+//   Stage 1 (sub-model): office_present 7 days ahead
+//   Stage 2 (main model): employees_count using predicted office_present
 
 export type TrendDirection = 'up' | 'down' | 'flat';
 
@@ -13,13 +15,19 @@ export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
 export interface ForecastResult {
   date: string;
-  predictedMeals: number;
+  // Stage 1: sub-model prediction
+  officePresent: number;
+  // Stage 2: main model prediction (pre-calibration ratio)
+  predictedRatio: number;
+  // Stage 2: calibrated employee count
+  employeesCount: number;
+  // Blend component scores
+  blendScores: { lgb: number; xgb: number; catboost: number };
+  // Operational recommendation
+  recommendedMeals: number;
   confidenceLower: number;
   confidenceUpper: number;
   confidenceLevel: ConfidenceLevel;
-  recommendedMeals: number;
-  expectedPresence: number;
-  attendanceRatio: number;
   recommendationNote: string;
 }
 
@@ -107,7 +115,8 @@ export interface ProcurementSummary {
 export interface ForecastHistoryEntry {
   id: string;
   date: string;
-  presence: number;
+  officePresent: number;
+  employeesCount: number;
   forecast: number;
   actual: number;
   ecart: number;
@@ -127,6 +136,11 @@ export interface ModelMetrics {
   accuracy: number;
   mae: number;
   rmse: number;
+  asymmetricCost: number;
+  catboostCount: number;
+  lgbCount: number;
+  xgbCount: number;
+  calibrationLambda: number;
 }
 
 export interface ModelFamily {
@@ -158,7 +172,8 @@ export interface FinancialKPI {
 export interface AttendancePoint {
   date: string;
   shortDate: string;
-  presence: number;
+  officePresent: number;
+  employeesCount: number;
   meals: number;
   ratio: number;
 }

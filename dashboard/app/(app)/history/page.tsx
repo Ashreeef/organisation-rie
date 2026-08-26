@@ -29,7 +29,7 @@ import { Download, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2 } from 'lucide-
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-type SortKey = 'date' | 'presence' | 'forecast' | 'actual' | 'ecart' | 'errorPct';
+type SortKey = 'date' | 'employeesCount' | 'forecast' | 'actual' | 'ecart' | 'errorPct';
 type SortDir = 'asc' | 'desc';
 
 const statusConfig = {
@@ -91,7 +91,7 @@ export default function HistoryPage() {
   const exportCSV = () => {
     const headers = ['Date', 'Présence', 'Prévision', 'Réel', 'Écart', 'Erreur %', 'Statut'];
     const rows = filtered.map((e) => [
-      e.date, e.presence, e.forecast, e.actual, e.ecart, e.errorPct, e.status,
+      e.date, e.employeesCount, e.forecast, e.actual, e.ecart, e.errorPct, e.status,
     ]);
     const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -240,8 +240,8 @@ export default function HistoryPage() {
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('date')}>
                   Date <SortIcon col="date" />
                 </th>
-                <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('presence')}>
-                  Employés <SortIcon col="presence" />
+                <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('employeesCount')}>
+                  Employés <SortIcon col="employeesCount" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('forecast')}>
                   Prévision <SortIcon col="forecast" />
@@ -265,7 +265,7 @@ export default function HistoryPage() {
                   className="border-b border-border/50 transition-colors hover:bg-muted/30"
                 >
                   <td className="py-3 pr-4 capitalize text-foreground">{formatDate(entry.date)}</td>
-                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.presence)}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.employeesCount)}</td>
                   <td className="py-3 pr-4 font-medium text-foreground">{formatNumber(entry.forecast)}</td>
                   <td className="py-3 pr-4 text-muted-foreground">
                     {entry.actual > 0 ? formatNumber(entry.actual) : '—'}

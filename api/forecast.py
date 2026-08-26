@@ -1,59 +1,119 @@
-"""Model loading and prediction logic."""
+"""
+Model loading and prediction logic for the RIE cascade pipeline.
+
+Cascade architecture:
+  1. Sub-model: predicts office_present 7 days ahead
+  2. Main model: predicts ratio = employees_count / office_present
+  3. Calibration: DOW offsets + shrinkage → final employees_count
+"""
 import json
+import pickle
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Optional
-import joblib
-
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-_meta_cache = None
-_models_cache = None
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
+
+_deploy_cache = None
+_sub_cache = None
+_features_cache = None
 
 
-def _load_meta():
-    global _meta_cache
-    if _meta_cache is None:
-        with open(MODELS_DIR / "ensemble_meta.json", encoding="utf-8") as f:
-            _meta_cache = json.load(f)
-    return _meta_cache
+def _load_deployment():
+    global _deploy_cache
+    if _deploy_cache is None:
+        path = MODELS_DIR / "_deployment.pkl"
+        if path.exists():
+            with open(path, "rb") as f:
+                _deploy_cache = pickle.load(f)
+        else:
+            _deploy_cache = _build_fallback_deployment()
+    return _deploy_cache
 
 
-def _load_models():
-    global _models_cache
-    if _models_cache is None:
-        meta = _load_meta()
-        _models_cache = {}
-        for name in meta["model_names"]:
-            path = MODELS_DIR / f"{name}.joblib"
-            if path.exists():
-                _models_cache[name] = joblib.load(path)
-    return _models_cache
+def _load_sub_model():
+    global _sub_cache
+    if _sub_cache is None:
+        path = MODELS_DIR / "office_presence_lgb.pkl"
+        if path.exists():
+            with open(path, "rb") as f:
+                _sub_cache = pickle.load(f)
+        else:
+            _sub_cache = None
+    return _sub_cache
+
+
+def _load_features_cache():
+    global _features_cache
+    if _features_cache is None:
+        path = DATA_DIR / "features_train.csv"
+        if path.exists():
+            _features_cache = pd.read_csv(path, parse_dates=["Date"])
+        else:
+            _features_cache = None
+    return _features_cache
+
+
+def _build_fallback_deployment():
+    """Minimal fallback when no deployment bundle exists."""
+    return {
+        "lgb_models": [], "xgb_models": [], "cb_models": [],
+        "best_blend_w": np.array([0.018, 0.089, 0.893]),
+        "offsets": {6: -6.0, 0: -7.8, 1: -10.2, 2: -5.4, 3: -9.0},
+        "dow_mean_actual": {6: 310.0, 0: 295.0, 1: 290.0, 2: 300.0, 3: 298.0},
+        "lam_opt": 0.726,
+        "clip_lo": 230.0,
+        "clip_hi": 520.0,
+        "feat_cols": [],
+        "lgb_alphas": [0.65, 0.68, 0.71, 0.74, 0.77, 0.80],
+        "lgb_seeds": [42, 7, 2024, 1337],
+        "xgb_alphas": [0.68, 0.71, 0.74],
+        "xgb_seeds": [42, 7, 2024],
+        "cb_seeds": [42, 7, 2024],
+        "lgb_alpha_weights": {},
+        "lgb_weights_arr": np.ones(6) / 6,
+        "avg_lgb_params": {},
+        "xgb_params": {},
+        "cb_params": {},
+        "has_catboost": False,
+        "oof_metrics": {"AsymCost": 18.98, "RMSE": 24.74, "MAE": 17.13},
+    }
 
 
 def get_model_info() -> dict:
-    meta = _load_meta()
-    models = _load_models()
-    lgbm_count = sum(1 for n in meta["model_names"] if n.startswith("LGBM"))
-    xgb_count = sum(1 for n in meta["model_names"] if n.startswith("XGB"))
-    lgbm_alphas = sorted(set(
-        float(n.split("_a")[1].split("_")[0])
-        for n in meta["model_names"] if n.startswith("LGBM")
-    ))
-    xgb_alphas = sorted(set(
-        float(n.split("_a")[1].split("_")[0])
-        for n in meta["model_names"] if n.startswith("XGB")
-    ))
+    """Return model metadata for the /api/model/metrics endpoint."""
+    dep = _load_deployment()
+    lgb_count = len(dep.get("lgb_models", []))
+    xgb_count = len(dep.get("xgb_models", []))
+    cb_count = len(dep.get("cb_models", []))
+    total = lgb_count + xgb_count + cb_count
+
+    # If no trained models saved yet, report config counts
+    if total == 0:
+        lgb_count = len(dep.get("lgb_alphas", [])) * len(dep.get("lgb_seeds", []))
+        xgb_count = len(dep.get("xgb_alphas", [])) * len(dep.get("xgb_seeds", []))
+        cb_count = len(dep.get("cb_seeds", []))
+        total = lgb_count + xgb_count + cb_count
+
+    metrics = dep.get("oof_metrics", {})
     return {
-        "version": "2.0",
-        "total_models": len(models),
-        "lgbm_count": lgbm_count,
+        "version": "3.0",
+        "total_models": total,
+        "lgb_count": lgb_count,
         "xgb_count": xgb_count,
-        "lgbm_alphas": lgbm_alphas,
-        "xgb_alphas": xgb_alphas,
-        "oof_metrics": meta.get("metrics", {}),
-        "feature_count": len(meta.get("feature_cols", [])),
+        "catboost_count": cb_count,
+        "lgb_weight": float(dep.get("best_blend_w", [0.02, 0.09, 0.89])[0]),
+        "xgb_weight": float(dep.get("best_blend_w", [0.02, 0.09, 0.89])[1]),
+        "catboost_weight": float(dep.get("best_blend_w", [0.02, 0.09, 0.89])[2]) if len(dep.get("best_blend_w", [])) > 2 else 0.0,
+        "calibration_lambda": float(dep.get("lam_opt", 0.726)),
+        "oof_metrics": {
+            "Asym. Cost": metrics.get("AsymCost", 18.98),
+            "MAE (repas)": metrics.get("MAE", 17.13),
+            "RMSE (repas)": metrics.get("RMSE", 24.74),
+        },
+        "feature_count": len(dep.get("feat_cols", [])),
     }
 
 
@@ -61,124 +121,228 @@ def predict_today(
     target_date: Optional[str] = None,
     office_present: Optional[int] = None,
 ) -> dict:
-    """Predict today's meal count using the trained ensemble.
+    """Run cascade inference for a given date.
 
-    If target_date is None, uses today's date.
-    If office_present is None, uses the mean from training data.
+    Pipeline:
+      1. Sub-model predicts office_present (7 days ahead)
+      2. Main ensemble predicts ratio
+      3. Calibration: count = ratio * office_present → DOW offset → shrinkage
     """
-    meta = _load_meta()
-    models = _load_models()
-    weights = meta["weights"]
-    feature_cols = meta["feature_cols"]
+    dep = _load_deployment()
 
     if target_date is None:
         target_date = pd.Timestamp.now().normalize().strftime("%Y-%m-%d")
 
     d = pd.Timestamp(target_date)
 
-    # Build minimal feature vector from calendar + defaults
-    row = _build_feature_row(target_date, office_present, feature_cols)
-    X = pd.DataFrame([row])[feature_cols]
+    # --- Stage 1: Sub-model (office presence) ---
+    if office_present is not None:
+        op_pred = float(office_present)
+    else:
+        op_pred = _predict_office_present(d)
 
-    # Encode categoricals the same way prepare_matrices does
-    cat_cols = ["conditions", "type precipitation"]
-    for col in cat_cols:
-        if col in X.columns:
-            X[col] = X[col].fillna("none").astype(str)
-            cats = sorted(X[col].unique())
-            cat_map = {v: i for i, v in enumerate(cats)}
-            X[col] = X[col].map(cat_map).fillna(0).astype(int)
+    # --- Try to get pre-computed features from CSV ---
+    features_df = _load_features_cache()
+    row_features = None
+    if features_df is not None:
+        match = features_df[features_df["Date"] == d]
+        if len(match) > 0:
+            row_features = match.iloc[0]
 
-    # Impute any NaN
-    for col in X.columns:
-        if X[col].isna().any():
-            X[col] = X[col].fillna(0)
+    # --- Stage 2: Main ensemble (ratio prediction) ---
+    if row_features is not None:
+        ratio_pred = _predict_ratio_from_features(dep, row_features)
+        # Use the actual office_present_pred from features if available
+        if "office_present_pred" in row_features and pd.notna(row_features["office_present_pred"]):
+            op_pred = float(row_features["office_present_pred"])
+    else:
+        ratio_pred = _predict_ratio_calendar_only(dep, d, op_pred)
 
-    # Weighted ensemble prediction
-    ratio_pred = 0.0
-    for name, model in models.items():
-        w = weights.get(name, 0.0)
-        if w > 0:
-            ratio_pred += w * model.predict(X)[0]
+    # --- Stage 3: Convert ratio to count ---
+    raw_count = ratio_pred * op_pred
 
-    ratio_pred = float(np.clip(ratio_pred, 0.20, 0.95))
+    # DOW offset calibration
+    dow = _algerian_dow(d)
+    offsets = dep.get("offsets", {})
+    if dow in offsets:
+        raw_count += offsets[dow]
 
-    if office_present is None:
-        office_present = 487  # default from training data mean
+    # Shrinkage toward DOW mean
+    lam = dep.get("lam_opt", 0.726)
+    dow_means = dep.get("dow_mean_actual", {})
+    if dow in dow_means:
+        raw_count = lam * raw_count + (1 - lam) * dow_means[dow]
 
-    predicted = int(round(ratio_pred * office_present))
-    predicted = max(0, predicted)
+    # Clip and round
+    clip_lo = dep.get("clip_lo", 230.0)
+    clip_hi = dep.get("clip_hi", 520.0)
+    count = float(np.clip(raw_count, clip_lo, clip_hi))
+    count_int = int(round(count))
 
-    # Confidence interval from historical std (~0.045)
-    spread = max(10, int(round(office_present * 0.045)))
+    # --- Confidence interval ---
+    spread = max(10, int(round(op_pred * 0.045)))
     safety = 0.06 if _is_ramadan(d) else 0.04
-    recommended = int(round(predicted * (1 + safety)))
+    recommended = int(round(count_int * (1 + safety)))
 
-    notes = _build_notes(target_date, office_present, ratio_pred)
+    # --- Blend scores (for diagnostics) ---
+    bw = dep.get("best_blend_w", [0.02, 0.09, 0.89])
+    blend_scores = {
+        "lgb": round(float(bw[0]), 4),
+        "xgb": round(float(bw[1]), 4),
+        "catboost": round(float(bw[2]), 4) if len(bw) > 2 else 0.0,
+    }
+
+    notes = _build_notes(target_date, int(op_pred), ratio_pred)
 
     return {
         "date": target_date,
-        "predicted_meals": predicted,
-        "confidence_lower": max(0, predicted - spread),
-        "confidence_upper": predicted + spread,
-        "confidence_level": "high" if spread <= 18 else "medium" if spread <= 28 else "low",
+        "office_present": int(round(op_pred)),
+        "predicted_ratio": round(ratio_pred, 4),
+        "employees_count": count_int,
+        "blend_scores": blend_scores,
         "recommended_meals": recommended,
-        "expected_presence": office_present,
-        "attendance_ratio": round(ratio_pred, 4),
+        "confidence_lower": max(0, count_int - spread),
+        "confidence_upper": count_int + spread,
+        "confidence_level": "high" if spread <= 18 else "medium" if spread <= 28 else "low",
         "recommendation_note": notes,
     }
 
 
-def _build_feature_row(date_str: str, office_present: Optional[int], feature_cols: list[str]) -> dict:
-    """Build a minimal feature row for prediction."""
-    d = pd.Timestamp(date_str)
+def _predict_office_present(d: pd.Timestamp) -> float:
+    """Predict office presence using sub-model or fallback."""
+    sub = _load_sub_model()
+    if sub is None:
+        return 310.0  # fallback
+
+    model = sub.get("model")
+    feat_cols = sub.get("features", [])
+
+    if model is None or not feat_cols:
+        return 310.0
+
+    # Build minimal feature row
+    row = _build_office_features(d, feat_cols)
+    X = pd.DataFrame([row])[feat_cols]
+
+    # Fill NaN
+    for col in X.columns:
+        if X[col].isna().any():
+            X[col] = X[col].fillna(0)
+
+    try:
+        pred = model.predict(X)[0]
+        return float(max(0, pred))
+    except Exception:
+        return 310.0
+
+
+def _build_office_features(d: pd.Timestamp, feature_cols: list) -> dict:
+    """Build feature row for office presence sub-model."""
     row = {}
-
-    # Calendar features
-    row["dayofweek"] = (d.dayofweek + 1) % 7
-    row["is_weekend"] = 1 if d.dayofweek >= 5 else 0
+    row["dow"] = _algerian_dow(d)
+    row["day_of_month"] = d.day
     row["month"] = d.month
-    row["day"] = d.day
-    row["week"] = d.isocalendar()[1]
+    row["week_of_year"] = d.isocalendar()[1]
+    row["is_weekend"] = 1 if d.dayofweek >= 5 else 0
+    row["is_sun_thu"] = 1 if d.dayofweek != 5 and d.dayofweek != 6 else 0
 
-    # Ramadan / holiday
+    # Cyclical encoding
+    row["sin_dow"] = np.sin(2 * np.pi * _algerian_dow(d) / 5)
+    row["cos_dow"] = np.cos(2 * np.pi * _algerian_dow(d) / 5)
+    row["sin_month"] = np.sin(2 * np.pi * d.month / 12)
+    row["cos_month"] = np.cos(2 * np.pi * d.month / 12)
+
+    # Holidays
     row["is_ramadan"] = 1 if _is_ramadan(d) else 0
     row["is_holiday"] = 1 if _is_holiday(d) else 0
 
-    # Weather defaults (clear day)
-    row["temperature_2m_mean"] = 22.0
-    row["rain_sum"] = 0.0
-    row["wind_speed_10m_max"] = 10.0
-    row["weathercode"] = 0
-    row["conditions"] = "Clear"
-    row["type precipitation"] = "none"
-
-    # Headcount
-    row["office_present"] = office_present or 487
-    row["employees_count"] = 0  # unknown at prediction time
-
-    # Lag features (use ratio averages from training)
-    row["lag_1"] = 0.73
-    row["lag_2"] = 0.73
-    row["lag_3"] = 0.73
-    row["lag_5"] = 0.73
-    row["lag_7"] = 0.73
-    row["rolling_mean_3"] = 0.73
-    row["rolling_mean_5"] = 0.73
-    row["rolling_mean_7"] = 0.73
-    row["rolling_mean_14"] = 0.73
-    row["rolling_std_7"] = 0.045
-    row["rolling_std_14"] = 0.045
-
-    # Ratio target
-    row["ratio"] = 0.73
-
-    # Fill any remaining feature cols with 0
+    # Fill remaining
     for col in feature_cols:
         if col not in row:
             row[col] = 0
 
     return row
+
+
+def _predict_ratio_from_features(dep: dict, row: pd.Series) -> float:
+    """Predict ratio using trained models and pre-computed features."""
+    feat_cols = dep.get("feat_cols", [])
+    if not feat_cols:
+        return 0.62
+
+    # Build feature vector
+    X = pd.DataFrame([{col: row.get(col, 0) if col in row.index else 0 for col in feat_cols}])
+    for col in X.columns:
+        if X[col].isna().any():
+            X[col] = X[col].fillna(0)
+
+    X_arr = X[feat_cols].values
+
+    # LGB prediction
+    lgb_models = dep.get("lgb_models", [])
+    lgb_alpha_weights = dep.get("lgb_alpha_weights", {})
+    lgb_weights_arr = dep.get("lgb_weights_arr", np.ones(6) / 6)
+
+    lgb_ratio = 0.0
+    if lgb_models:
+        # Group by alpha, average seeds, then weight
+        alpha_preds = {}
+        for alpha, seed, model in lgb_models:
+            pred = model.predict(X_arr)[0]
+            alpha_preds.setdefault(alpha, []).append(pred)
+        alpha_means = np.array([np.mean(alpha_preds[a]) for a in sorted(alpha_preds.keys())])
+        lgb_ratio = float(alpha_means @ lgb_weights_arr[:len(alpha_means)])
+    else:
+        lgb_ratio = 0.62
+
+    # XGB prediction
+    xgb_models = dep.get("xgb_models", [])
+    if xgb_models:
+        alpha_preds = {}
+        for alpha, seed, model in xgb_models:
+            pred = model.predict(X_arr)[0]
+            alpha_preds.setdefault(alpha, []).append(pred)
+        xgb_ratio = float(np.mean([np.mean(v) for v in alpha_preds.values()]))
+    else:
+        xgb_ratio = lgb_ratio
+
+    # CatBoost prediction
+    cb_models = dep.get("cb_models", [])
+    if cb_models:
+        cb_preds = [m.predict(X_arr)[0] for _, m in cb_models]
+        cb_ratio = float(np.mean(cb_preds))
+    else:
+        cb_ratio = lgb_ratio
+
+    # Blend
+    bw = dep.get("best_blend_w", [0.02, 0.09, 0.89])
+    ratio = bw[0] * lgb_ratio + bw[1] * xgb_ratio
+    if len(bw) > 2 and cb_models:
+        ratio += bw[2] * cb_ratio
+
+    return float(np.clip(ratio, 0.30, 0.88))
+
+
+def _predict_ratio_calendar_only(dep: dict, d: pd.Timestamp, op_pred: float) -> float:
+    """Fallback ratio prediction using only calendar features."""
+    dow = _algerian_dow(d)
+    # DOW-based defaults (from training data patterns)
+    dow_defaults = {6: 0.60, 0: 0.58, 1: 0.57, 2: 0.61, 3: 0.59}
+    ratio = dow_defaults.get(dow, 0.60)
+
+    if _is_ramadan(d):
+        ratio *= 0.85
+    if _is_holiday(d):
+        ratio *= 0.50
+
+    return float(np.clip(ratio, 0.30, 0.88))
+
+
+# --- Calendar helpers ---
+
+def _algerian_dow(d: pd.Timestamp) -> int:
+    """Algerian work week: Sun=6, Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5"""
+    return (d.dayofweek + 1) % 7
 
 
 def _is_ramadan(d: pd.Timestamp) -> bool:
@@ -216,4 +380,4 @@ def _build_notes(date_str: str, office: int, ratio: float) -> str:
     if _is_holiday(d):
         parts.append("Jour ferie")
     cal = "Hors Ramadan" if not parts else ", ".join(parts)
-    return f"Calendrier: {cal} | Presence: {office} | Ratio: {ratio:.3f}"
+    return f"Calendrier: {cal} | Presence bureau: {office} | Ratio: {ratio:.3f}"

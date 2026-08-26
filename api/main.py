@@ -3,13 +3,13 @@ RIE BNP Paribas - FastAPI Backend
 
 Endpoints:
   GET  /api/health                 - Health check
-  GET  /api/forecast/today         - Today's prediction from ensemble model
+  GET  /api/forecast/today         - Today's prediction from cascade model
   POST /api/forecast               - Prediction for arbitrary date
   GET  /api/operations/today       - Today's operational data
-  POST /api/operations             - Submit operational entry (prepared, served, etc.)
+  POST /api/operations             - Submit operational entry
   PUT  /api/operations/{date}      - Modify an existing entry
   GET  /api/operations             - List all operational entries
-  GET  /api/model/metrics          - Ensemble model info
+  GET  /api/model/metrics          - Model info and metrics
 
 Usage:
     uvicorn api.main:app --reload --port 8000
@@ -28,14 +28,15 @@ from .models import (
     OperationalResponse,
     ModelMetricsResponse,
     HealthResponse,
+    BlendScores,
 )
 from .forecast import predict_today, get_model_info
 from .operations import get_today_entry, save_entry, get_all_entries
 
 app = FastAPI(
     title="RIE BNP Paribas API",
-    description="Demande de repas - Prediction et suivi operationnel",
-    version="2.0.0",
+    description="Demande de repas - Prediction cascade et suivi operationnel",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -62,10 +63,10 @@ def health():
 
 @app.get("/api/forecast/today", response_model=TodayForecast)
 def forecast_today():
-    """Get today's prediction from the trained ensemble model."""
+    """Get today's prediction from the trained cascade model."""
     today = date.today().isoformat()
     result = predict_today(target_date=today)
-    return TodayForecast(**result)
+    return _to_forecast_model(result)
 
 
 @app.post("/api/forecast", response_model=TodayForecast)
@@ -76,7 +77,23 @@ def forecast_date(req: TodayForecastRequest):
         target_date=target,
         office_present=req.office_present,
     )
-    return TodayForecast(**result)
+    return _to_forecast_model(result)
+
+
+def _to_forecast_model(data: dict) -> TodayForecast:
+    """Convert predict_today() dict to Pydantic model."""
+    return TodayForecast(
+        date=data["date"],
+        office_present=data["office_present"],
+        predicted_ratio=data["predicted_ratio"],
+        employees_count=data["employees_count"],
+        blend_scores=BlendScores(**data["blend_scores"]),
+        recommended_meals=data["recommended_meals"],
+        confidence_lower=data["confidence_lower"],
+        confidence_upper=data["confidence_upper"],
+        confidence_level=data["confidence_level"],
+        recommendation_note=data["recommendation_note"],
+    )
 
 
 @app.get("/api/operations/today", response_model=OperationalResponse)
@@ -88,7 +105,7 @@ def operations_today():
     return OperationalResponse(
         date=today,
         status="active",
-        forecast=TodayForecast(**forecast),
+        forecast=_to_forecast_model(forecast),
         operational=OperationalEntry(**operational) if operational else None,
     )
 
@@ -120,6 +137,6 @@ def list_operations():
 
 @app.get("/api/model/metrics", response_model=ModelMetricsResponse)
 def model_metrics():
-    """Get ensemble model info and metrics."""
+    """Get model info and metrics."""
     info = get_model_info()
     return ModelMetricsResponse(**info)

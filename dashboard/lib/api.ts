@@ -206,32 +206,36 @@ function updateStore(updater: (s: ServiceStore) => ServiceStore): ServiceStore {
 /* -------------------------------------------------------------------------- */
 
 function mapBackendForecast(data: {
-  date: string; predicted_meals: number; confidence_lower: number;
-  confidence_upper: number; confidence_level: string; recommended_meals: number;
-  expected_presence: number; attendance_ratio: number; recommendation_note: string;
+  date: string; office_present: number; predicted_ratio: number;
+  employees_count: number; recommended_meals: number;
+  confidence_lower: number; confidence_upper: number;
+  confidence_level: string; recommendation_note: string;
+  blend_scores: { lgb: number; xgb: number; catboost: number };
 }): ForecastResult {
   return {
     date: data.date,
-    predictedMeals: data.predicted_meals,
+    officePresent: data.office_present,
+    predictedRatio: data.predicted_ratio,
+    employeesCount: data.employees_count,
+    blendScores: data.blend_scores,
+    recommendedMeals: data.recommended_meals,
     confidenceLower: data.confidence_lower,
     confidenceUpper: data.confidence_upper,
     confidenceLevel: data.confidence_level as 'high' | 'medium' | 'low',
-    recommendedMeals: data.recommended_meals,
-    expectedPresence: data.expected_presence,
-    attendanceRatio: data.attendance_ratio,
     recommendationNote: data.recommendation_note,
   };
 }
 
 const fallbackForecast = (dateStr: string): ForecastResult => ({
   date: dateStr,
-  predictedMeals: 310,
+  officePresent: 312,
+  predictedRatio: 0.62,
+  employeesCount: 310,
+  blendScores: { lgb: 0.018, xgb: 0.089, catboost: 0.893 },
+  recommendedMeals: 322,
   confidenceLower: 285,
   confidenceUpper: 335,
   confidenceLevel: 'medium',
-  recommendedMeals: 322,
-  expectedPresence: 487,
-  attendanceRatio: 0.64,
   recommendationNote: 'Mode dégradé — backend indisponible',
 });
 
@@ -252,9 +256,11 @@ export const api = {
   async getTodayForecast(): Promise<ForecastResult> {
     try {
       const data = await apiGet<{
-        date: string; predicted_meals: number; confidence_lower: number;
-        confidence_upper: number; confidence_level: string; recommended_meals: number;
-        expected_presence: number; attendance_ratio: number; recommendation_note: string;
+        date: string; office_present: number; predicted_ratio: number;
+        employees_count: number; recommended_meals: number;
+        confidence_lower: number; confidence_upper: number;
+        confidence_level: string; recommendation_note: string;
+        blend_scores: { lgb: number; xgb: number; catboost: number };
       }>('/api/forecast/today');
       return mapBackendForecast(data);
     } catch {
@@ -268,9 +274,11 @@ export const api = {
     const dateStr = tomorrow.toISOString().slice(0, 10);
     try {
       const data = await apiPost<{
-        date: string; predicted_meals: number; confidence_lower: number;
-        confidence_upper: number; confidence_level: string; recommended_meals: number;
-        expected_presence: number; attendance_ratio: number; recommendation_note: string;
+        date: string; office_present: number; predicted_ratio: number;
+        employees_count: number; recommended_meals: number;
+        confidence_lower: number; confidence_upper: number;
+        confidence_level: string; recommendation_note: string;
+        blend_scores: { lgb: number; xgb: number; catboost: number };
       }>('/api/forecast', { date: dateStr });
       return mapBackendForecast(data);
     } catch {
@@ -400,7 +408,7 @@ export const api = {
       {
         id: 'expected-presence',
         label: 'Employés attendus',
-        value: `${f.expectedPresence}`,
+        value: `${f.employeesCount}`,
         unit: 'employés',
         trend: { direction: 'flat', value: 'Aujourd\'hui', label: 'fréquentation prévue' },
         variant: 'default',
@@ -456,7 +464,7 @@ export const api = {
       const errorPct = actual > 0 ? Math.round((Math.abs(ecart) / Math.max(p.predictedMeals, 1)) * 1000) / 10 : 0;
       const status: 'bon' | 'acceptable' | 'mauvais' =
         actual === 0 ? 'acceptable' : errorPct < 5 ? 'bon' : errorPct < 10 ? 'acceptable' : 'mauvais';
-      return { id: `hist-${p.date}`, date: p.date, presence: p.expectedPresence, forecast: p.predictedMeals, actual, ecart, errorPct, status };
+      return { id: `hist-${p.date}`, date: p.date, officePresent: p.expectedPresence, employeesCount: p.predictedMeals, forecast: p.predictedMeals, actual, ecart, errorPct, status };
     });
     return delay(entries);
   },
@@ -492,9 +500,9 @@ export const api = {
   async getModelMetrics(): Promise<ModelMetrics> {
     try {
       const data = await apiGet<{
-        version: string; total_models: number; lgbm_count: number; xgb_count: number;
-        lgbm_alphas: number[]; xgb_alphas: number[];
-        oof_metrics: { 'MAE (repas)': number; 'RMSE (repas)': number; 'Asym. Cost': number; 'MAE (ratio)': number };
+        version: string; total_models: number; lgb_count: number; xgb_count: number;
+        catboost_count: number; calibration_lambda: number;
+        oof_metrics: { 'MAE (repas)': number; 'RMSE (repas)': number; 'Asym. Cost': number };
         feature_count: number;
       }>('/api/model/metrics');
 
@@ -502,7 +510,7 @@ export const api = {
         version: `v${data.version}`,
         lastTrainingDate: new Date().toISOString().slice(0, 10),
         lastPredictionDate: new Date().toISOString().slice(0, 10),
-        evaluationMetric: 'Asymmetric Cost',
+        evaluationMetric: 'AsymmetricCost',
         predictionError: `${data.oof_metrics['MAE (repas)']} repas`,
         dataFreshness: 'En ligne',
         driftIndicator: 'stable',
@@ -510,6 +518,11 @@ export const api = {
         accuracy: Math.round((1 - data.oof_metrics['Asym. Cost']) * 100),
         mae: data.oof_metrics['MAE (repas)'],
         rmse: data.oof_metrics['RMSE (repas)'],
+        asymmetricCost: data.oof_metrics['Asym. Cost'],
+        catboostCount: data.catboost_count,
+        lgbCount: data.lgb_count,
+        xgbCount: data.xgb_count,
+        calibrationLambda: data.calibration_lambda,
       };
     } catch { return modelMetrics; }
   },
@@ -517,12 +530,13 @@ export const api = {
   async getModelFamilies(): Promise<ModelFamily[]> {
     try {
       const data = await apiGet<{
-        lgbm_count: number; xgb_count: number; lgbm_alphas: number[]; xgb_alphas: number[];
-        oof_metrics: { 'Asym. Cost': number };
+        lgb_count: number; xgb_count: number; catboost_count: number;
+        lgb_weight: number; xgb_weight: number; catboost_weight: number;
       }>('/api/model/metrics');
       return [
-        { name: 'LightGBM', modelCount: data.lgbm_count, contribution: 72, description: `Quantile regression - ${data.lgbm_alphas.length} alphas x 3 seeds` },
-        { name: 'XGBoost', modelCount: data.xgb_count, contribution: 28, description: `Quantile regression - ${data.xgb_alphas.length} alphas x 3 seeds` },
+        { name: 'LightGBM', modelCount: data.lgb_count, contribution: Math.round(data.lgb_weight * 100), description: `Gradient boosting — seed × alpha variants` },
+        { name: 'XGBoost', modelCount: data.xgb_count, contribution: Math.round(data.xgb_weight * 100), description: `Regularized boosting — seed × alpha variants` },
+        { name: 'CatBoost', modelCount: data.catboost_count, contribution: Math.round(data.catboost_weight * 100), description: `Ordered boosting — dominant blend weight` },
       ];
     } catch { return modelFamilies; }
   },
@@ -542,7 +556,8 @@ export const api = {
     const points: AttendancePoint[] = bundle.points.map((p) => ({
       date: p.date,
       shortDate: formatShortDate(p.date),
-      presence: p.expectedPresence,
+      officePresent: p.expectedPresence,
+      employeesCount: p.predictedMeals,
       meals: p.predictedMeals,
       ratio: p.expectedPresence > 0 ? p.predictedMeals / p.expectedPresence : 0,
     }));

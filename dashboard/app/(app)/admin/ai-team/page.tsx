@@ -176,14 +176,14 @@ export default function AITeamPage() {
       <Card className="p-6">
         <SectionHeader
           title="Architecture de l'ensemble"
-          description="33 modèles combinés (LightGBM + XGBoost)"
+          description={`${metrics.lgbCount + metrics.xgbCount + metrics.catboostCount} modèles combinés (LightGBM + XGBoost + CatBoost)`}
         />
         <div className="mt-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
           <Layers className="h-8 w-8 text-primary" />
           <div>
-            <p className="text-2xl font-bold text-primary">33 modèles</p>
+            <p className="text-2xl font-bold text-primary">{metrics.lgbCount + metrics.xgbCount + metrics.catboostCount} modèles</p>
             <p className="text-sm text-muted-foreground">
-              Ensemble avec calibration post-modèle (isotonic regression)
+              Cascade: sous-modèle office_present → ensemble ratio → calibration DOW + shrinkage (λ={metrics.calibrationLambda.toFixed(3)})
             </p>
           </div>
         </div>
@@ -277,12 +277,12 @@ export default function AITeamPage() {
             <AccordionTrigger>Pipeline de prédiction</AccordionTrigger>
             <AccordionContent>
               <ol className="space-y-1.5 text-sm text-muted-foreground">
-                <li>1. Collecte des données depuis 7 sources</li>
-                <li>2. Feature engineering et target encoding</li>
-                <li>3. Prédiction du ratio de fréquentation par l'ensemble</li>
-                <li>4. Calibration post-modèle (isotonic regression)</li>
-                <li>5. Calcul de l'intervalle de confiance (quantile regression)</li>
-                <li>6. Application de la marge de sécurité opérationnelle</li>
+                <li>1. Sous-modèle LightGBM: prédit la présence au bureau (7j)</li>
+                <li>2. Feature engineering: 126 variables (calendrier, météo, menus, lags)</li>
+                <li>3. Ensemble 3 familles (LGB + XGB + CatBoost) prédit le ratio</li>
+                <li>4. Calibration: offsets par jour + shrinkage vers la moyenne historique</li>
+                <li>5. Conversion ratio × présence → nombre de repas</li>
+                <li>6. Marge de sécurité opérationnelle (+4-6%)</li>
               </ol>
             </AccordionContent>
           </AccordionItem>
@@ -290,10 +290,9 @@ export default function AITeamPage() {
             <AccordionTrigger>Stratégie d'entraînement</AccordionTrigger>
             <AccordionContent>
               <p className="text-sm text-muted-foreground">
-                Réentraînement hebdomadaire sur données glissantes de 12 mois.
-                Validation par walk-forward. Les 36 modèles sont entraînés avec
-                des seeds et hyperparamètres différents pour maximiser la
-                diversité de l'ensemble.
+                Validation par TimeSeriesSplit (5 folds, gap=7j). Les modèles sont entraînés
+                avec des seeds et hyperparamètres Optuna différents. Pondération par blend weights
+                optimisés via grid search sur la métrique asymmetric cost.
               </p>
             </AccordionContent>
           </AccordionItem>

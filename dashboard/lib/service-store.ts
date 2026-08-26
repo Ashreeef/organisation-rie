@@ -132,7 +132,7 @@ function rollover(store: ServiceStore): ServiceStore {
   const historyEntry: OperationalEntry = {
     id: `entry-${today.date}`,
     date: today.date,
-    presence: today.forecast?.expectedPresence ?? 0,
+    presence: today.forecast?.employeesCount ?? 0,
     forecast: today.plannedMeals,
     actual: today.actualMealsServed,
     menu: today.menu?.name ?? '',

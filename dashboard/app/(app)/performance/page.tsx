@@ -84,7 +84,7 @@ export default function PerformancePage() {
 
   const chartData = attendance.map((a) => ({
     shortDate: a.shortDate,
-    presence: a.presence,
+    officePresent: a.officePresent,
     meals: a.meals,
   }));
 
@@ -157,7 +157,7 @@ export default function PerformancePage() {
                 }}
               />
               <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-              <Bar dataKey="presence" name="Employés présents" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="officePresent" name="Employés présents" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
               <Bar dataKey="meals" name="Repas servis" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

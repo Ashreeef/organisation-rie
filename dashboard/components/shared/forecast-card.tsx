@@ -38,16 +38,16 @@ export function ForecastCard({ forecast, tomorrowLabel, compact }: ForecastCardP
         </Badge>
       </div>
 
-      {/* Flow: Employees → Estimated → Recommended */}
+      {/* Flow: Office Present → Estimated Meals → Recommended Meals */}
       {!compact && (
         <div className="mt-6 flex items-center justify-center gap-6 lg:gap-10">
-          {/* Employees */}
+          {/* Office Present (sub-model) */}
           <div className="text-center">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Employés attendus
+              Présence bureau
             </p>
             <p className="mt-1 text-4xl font-bold text-foreground">
-              {formatNumber(forecast.expectedPresence)}
+              {formatNumber(forecast.officePresent)}
             </p>
           </div>
 
@@ -56,13 +56,13 @@ export function ForecastCard({ forecast, tomorrowLabel, compact }: ForecastCardP
             <ChevronRight className="h-6 w-6 rotate-90 lg:rotate-0" />
           </div>
 
-          {/* Estimated */}
+          {/* Estimated (main model) */}
           <div className="text-center">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Repas estimés
             </p>
             <p className="mt-1 text-4xl font-bold text-foreground">
-              {formatNumber(forecast.predictedMeals)}
+              {formatNumber(forecast.employeesCount)}
             </p>
           </div>
 
@@ -71,7 +71,7 @@ export function ForecastCard({ forecast, tomorrowLabel, compact }: ForecastCardP
             <ChevronRight className="h-6 w-6 rotate-90 lg:rotate-0" />
           </div>
 
-          {/* Recommended */}
+          {/* Recommended (with safety margin) */}
           <div className="text-center">
             <p className="text-xs font-medium uppercase tracking-wide text-primary">
               Repas recommandés
