@@ -13,6 +13,11 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.calendar_utils import algerian_public_dates, ramadan_ranges  # noqa: E402
+
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
 
@@ -48,9 +53,18 @@ def _load_sub_model():
 def _load_features_cache():
     global _features_cache
     if _features_cache is None:
-        path = DATA_DIR / "features_train.csv"
-        if path.exists():
-            _features_cache = pd.read_csv(path, parse_dates=["Date"])
+        live = DATA_DIR / "features_live.csv"
+        train = DATA_DIR / "features_train.csv"
+        frames = []
+        if live.exists():
+            frames.append(pd.read_csv(live, parse_dates=["Date"]))
+        if train.exists():
+            frames.append(pd.read_csv(train, parse_dates=["Date"]))
+        if frames:
+            merged = pd.concat(frames, axis=0)
+            merged = merged.drop_duplicates(subset="Date", keep="first")
+            merged = merged.sort_values("Date")
+            _features_cache = merged
         else:
             _features_cache = None
     return _features_cache
@@ -346,28 +360,13 @@ def _algerian_dow(d: pd.Timestamp) -> int:
 
 
 def _is_ramadan(d: pd.Timestamp) -> bool:
-    year = d.year
-    windows = {
-        2024: ("2024-03-11", "2024-04-09"),
-        2025: ("2025-03-01", "2025-03-30"),
-        2026: ("2026-02-18", "2026-03-19"),
-        2027: ("2027-02-08", "2027-03-09"),
-    }
-    if year not in windows:
-        return False
-    start, end = windows[year]
-    return pd.Timestamp(start) <= d <= pd.Timestamp(end)
+    """Ramadan (convention notebook 03) — calendrier via src.calendar_utils."""
+    return any(start <= d <= end for start, end in ramadan_ranges([d.year]))
 
 
 def _is_holiday(d: pd.Timestamp) -> bool:
-    key = f"{d.year}-{d.month:02d}-{d.day:02d}"
-    fixed = {
-        f"{d.year}-01-01",
-        f"{d.year}-05-01",
-        f"{d.year}-07-05",
-        f"{d.year}-11-01",
-    }
-    return key in fixed
+    """Jour férié algérien (fixe ou islamique) — via src.calendar_utils."""
+    return d in algerian_public_dates([d.year])
 
 
 def _build_notes(date_str: str, office: int, ratio: float) -> str:

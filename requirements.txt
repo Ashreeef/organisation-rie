@@ -10,7 +10,7 @@ xgboost==2.0.3
 optuna==3.6.1
 
 # Menu / text features
-holidays==0.47
+holidays==0.99
 
 # API
 fastapi>=0.100.0

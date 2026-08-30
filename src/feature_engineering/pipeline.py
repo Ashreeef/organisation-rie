@@ -13,7 +13,8 @@ from typing import Tuple, List, Optional
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from src.menu_optimization.menu_cleaning import extract_menu_features
+from src.calendar_utils import algerian_public_dates, ramadan_ranges  # noqa: E402
+from src.menu_optimization.menu_cleaning import extract_menu_features  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -26,12 +27,6 @@ DAY_MAP_FR = {
     "Wednesday": "Mercredi", "Thursday": "Jeudi",
     "Friday": "Vendredi", "Saturday": "Samedi",
 }
-
-RAMADAN_WINDOWS = [
-    (pd.Timestamp("2022-04-02"), pd.Timestamp("2022-05-01")),
-    (pd.Timestamp("2023-03-23"), pd.Timestamp("2023-04-20")),
-    (pd.Timestamp("2024-03-11"), pd.Timestamp("2024-04-09")),
-]
 
 FINAL_EXCLUDE = {
     "entrées", "plat pricipal_1", "plat principal_2",
@@ -120,8 +115,8 @@ def _in_windows(dates: pd.Series, windows) -> pd.Series:
     return mask
 
 
-def _ramadan_day(date: pd.Timestamp) -> int:
-    for start, end in RAMADAN_WINDOWS:
+def _ramadan_day(date: pd.Timestamp, ranges) -> int:
+    for start, end in ranges:
         if start <= date <= end:
             return (date - start).days + 1
     return 0
@@ -130,28 +125,22 @@ def _ramadan_day(date: pd.Timestamp) -> int:
 def add_holiday_features(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     years = out["Date"].dt.year.unique().tolist()
+    ranges = ramadan_ranges(years)
 
-    try:
-        import holidays as hol
-        dz_holidays = {}
-        for y in years:
-            dz_holidays.update(hol.Algeria(years=y))
-        holiday_dates = {str(k) for k in dz_holidays.keys()}
-        out["is_holiday"] = out["Date"].dt.date.astype(str).map(
-            lambda d: int(d in holiday_dates)
-        ).fillna(0).astype(int)
-        out["is_pre_holiday"] = out["Date"].apply(
-            lambda d: int((d + pd.Timedelta(days=1)).date() in dz_holidays)
-        ).astype(int)
-    except ImportError:
-        out["is_holiday"]     = 0
-        out["is_pre_holiday"] = 0
+    # Jours fériés officiels algériens (fixes + islamiques) — src/calendar_utils
+    holiday_dz = {pd.Timestamp(x).date() for x in algerian_public_dates(years)}
+    out["is_holiday"] = out["Date"].dt.date.map(
+        lambda d: int(d in holiday_dz)
+    ).astype(int)
+    out["is_pre_holiday"] = out["Date"].apply(
+        lambda d: int((d + pd.Timedelta(days=1)).date() in holiday_dz)
+    ).astype(int)
 
-    out["is_ramadan"] = _in_windows(out["Date"], RAMADAN_WINDOWS).astype(int)
-    out["ramadan_day"] = out["Date"].apply(_ramadan_day)
+    out["is_ramadan"] = _in_windows(out["Date"], ranges).astype(int)
+    out["ramadan_day"] = out["Date"].apply(lambda d: _ramadan_day(d, ranges))
 
-    pre_windows  = [(s - pd.Timedelta(days=7), s - pd.Timedelta(days=1)) for s, _ in RAMADAN_WINDOWS]
-    post_windows = [(e + pd.Timedelta(days=1), e + pd.Timedelta(days=7)) for _, e in RAMADAN_WINDOWS]
+    pre_windows  = [(s - pd.Timedelta(days=7), s - pd.Timedelta(days=1)) for s, _ in ranges]
+    post_windows = [(e + pd.Timedelta(days=1), e + pd.Timedelta(days=7)) for _, e in ranges]
     out["is_pre_ramadan"]  = _in_windows(out["Date"], pre_windows).astype(int)
     out["is_post_ramadan"] = _in_windows(out["Date"], post_windows).astype(int)
 
