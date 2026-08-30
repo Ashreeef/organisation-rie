@@ -166,9 +166,11 @@ def predict_today(
     # --- Stage 2: Main ensemble (ratio prediction) ---
     if row_features is not None:
         ratio_pred = _predict_ratio_from_features(dep, row_features)
-        # Use the actual office_present_pred from features if available
-        if "office_present_pred" in row_features and pd.notna(row_features["office_present_pred"]):
-            op_pred = float(row_features["office_present_pred"])
+        # Préférer la valeur du fichier de features (observée pour l'historique,
+        # prédiction du replayer office pour l'horizon live).
+        op_val = _office_from_features_row(row_features)
+        if op_val is not None:
+            op_pred = op_val
     else:
         ratio_pred = _predict_ratio_calendar_only(dep, d, op_pred)
 
@@ -222,60 +224,56 @@ def predict_today(
     }
 
 
+def _office_from_features_row(row: pd.Series) -> Optional[float]:
+    """Valeur office de référence depuis une ligne de features.
+
+    Historique (features_train.csv) : ``office_present`` réel.
+    Horizon live (features_live.csv) : ``office_present == office_present_pred``
+    (prédiction du replayer du sous-modèle office).
+    """
+    for col in ("office_present", "office_present_pred"):
+        if col in row.index and pd.notna(row.get(col)):
+            return float(row[col])
+    return None
+
+
 def _predict_office_present(d: pd.Timestamp) -> float:
-    """Predict office presence using sub-model or fallback."""
+    """Fallback ``office_present`` pour une date sans ligne de features.
+
+    Rejoue le sous-modèle du notebook 04 via
+    ``daily_features.roll_office_forward`` — les mêmes features que la
+    génération quotidienne, aucune liste manuelle. En dernier recours :
+    moyenne réelle par jour de semaine du déploiement.
+    """
     sub = _load_sub_model()
-    if sub is None:
-        return 310.0  # fallback
-
-    model = sub.get("model")
-    feat_cols = sub.get("features", [])
-
-    if model is None or not feat_cols:
-        return 310.0
-
-    # Build minimal feature row
-    row = _build_office_features(d, feat_cols)
-    X = pd.DataFrame([row])[feat_cols]
-
-    # Fill NaN
-    for col in X.columns:
-        if X[col].isna().any():
-            X[col] = X[col].fillna(0)
-
+    if sub is None or sub.get("model") is None or not sub.get("features"):
+        return _office_dow_fallback(d)
     try:
-        pred = model.predict(X)[0]
-        return float(max(0, pred))
+        history = pd.read_csv(DATA_DIR / "real_clean.csv", parse_dates=["Date"])
+        if len(history) < 60:
+            raise ValueError("historique trop court")
+        from src.forecasting.daily_features import roll_office_forward
+        preds = roll_office_forward(history, [d])
+        val = preds.get(d)
+        if val is not None and pd.notna(val):
+            return float(val)
     except Exception:
-        return 310.0
+        pass
+    return _office_dow_fallback(d)
 
 
-def _build_office_features(d: pd.Timestamp, feature_cols: list) -> dict:
-    """Build feature row for office presence sub-model."""
-    row = {}
-    row["dow"] = _algerian_dow(d)
-    row["day_of_month"] = d.day
-    row["month"] = d.month
-    row["week_of_year"] = d.isocalendar()[1]
-    row["is_weekend"] = 1 if d.dayofweek >= 5 else 0
-    row["is_sun_thu"] = 1 if d.dayofweek != 5 and d.dayofweek != 6 else 0
-
-    # Cyclical encoding
-    row["sin_dow"] = np.sin(2 * np.pi * _algerian_dow(d) / 5)
-    row["cos_dow"] = np.cos(2 * np.pi * _algerian_dow(d) / 5)
-    row["sin_month"] = np.sin(2 * np.pi * d.month / 12)
-    row["cos_month"] = np.cos(2 * np.pi * d.month / 12)
-
-    # Holidays
-    row["is_ramadan"] = 1 if _is_ramadan(d) else 0
-    row["is_holiday"] = 1 if _is_holiday(d) else 0
-
-    # Fill remaining
-    for col in feature_cols:
-        if col not in row:
-            row[col] = 0
-
-    return row
+def _office_dow_fallback(d: pd.Timestamp) -> float:
+    """Repli statistique : moyenne réelle du jour de semaine (déploiement)."""
+    dep = _load_deployment()
+    means = dep.get("dow_mean_actual", {})
+    dow = _algerian_dow(d)
+    op = float(means.get(dow, np.nan))
+    if pd.isna(op):
+        vals = list(means.values())
+        op = float(np.mean(vals)) if vals else 310.0
+    if _is_holiday(d):
+        op *= 0.5
+    return float(np.clip(op, dep.get("clip_lo", 230.0), dep.get("clip_hi", 520.0)))
 
 
 def _predict_ratio_from_features(dep: dict, row: pd.Series) -> float:
