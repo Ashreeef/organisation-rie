@@ -27,7 +27,7 @@ import logging
 from datetime import date
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
@@ -43,44 +43,17 @@ from .models import (
 from .forecast import predict_today, get_model_info
 from .operations import get_today_entry, save_entry, get_all_entries
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
-from .config import settings
-from .security import verify_api_key_or_token, optional_auth, JWTAuth, create_test_token
-from .monitoring import (
-    setup_logging,
-    setup_sentry_if_configured,
-    RequestContextMiddleware,
-    PerformanceLoggingMiddleware,
-    log_event,
-)
-
-# Setup logging and monitoring
-setup_logging()
-setup_sentry_if_configured()
-
-logger = logging.getLogger(__name__)
-
-# Validate production settings
-if settings.ENVIRONMENT == "production":
-    settings.validate_production()
 
 app = FastAPI(
-    title=settings.API_TITLE,
-    description=settings.API_DESCRIPTION,
-    version=settings.API_VERSION,
-    debug=settings.DEBUG,
+    title="RIE BNP Paribas Forecasting API",
+    description="Meal demand prediction and operational tracking",
+    version="1.0.0",
+    debug=True,
 )
-
-# Add monitoring middleware
-app.add_middleware(RequestContextMiddleware)
-app.add_middleware(PerformanceLoggingMiddleware)
-
-# Configure CORS
-cors_origins = settings.get_cors_origins()
-logger.info(f"Configuring CORS for: {cors_origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,7 +71,6 @@ def health():
     """Health check endpoint - always public."""
     info = get_model_info()
     uptime = f"{int(time.time() - _start_time)}s"
-    log_event("health_check", {"models": info["total_models"], "uptime": uptime})
     return HealthResponse(
         status="ok",
         models_loaded=info["total_models"],
@@ -106,61 +78,19 @@ def health():
     )
 
 
-# ============================================================================
-# Authentication Endpoints (if enabled)
-# ============================================================================
-
-class TokenRequest:
-    """Simple token request (expand for full OAuth2 login)."""
-    pass
-
-@app.post("/api/auth/token", tags=["auth"])
-def get_token(user_id: str = "dashboard_user"):
-    """
-    Get JWT access token (development only).
-    
-    In production, implement proper OAuth2 login flow.
-    """
-    if not settings.ENABLE_AUTHENTICATION:
-        return {"detail": "Authentication not enabled"}
-    
-    token = JWTAuth.create_access_token({"sub": user_id})
-    log_event("token_issued", {"user": user_id})
-    return {"access_token": token, "token_type": "bearer"}
-
-
-# ============================================================================
-# Protected Endpoints (may require authentication based on settings)
-# ============================================================================
-
-def get_auth_user(auth: dict = Depends(optional_auth)) -> dict:
-    """Get authenticated user or anonymous."""
-    return auth
-
-
 @app.get("/api/forecast/today", response_model=TodayForecast)
-def forecast_today(auth: dict = Depends(get_auth_user)):
+def forecast_today():
     """Get today's prediction from the trained cascade model."""
     today = date.today().isoformat()
     try:
         result = predict_today(target_date=today)
-        meals = result.get('employees_count')
-        log_event("forecast_generated", {
-            "date": today,
-            "meals": meals,
-            "confidence": result.get('confidence_level'),
-            "user": auth.get('sub', 'unknown')
-        })
-        logger.info(f"forecast_today: {meals} meals predicted for {auth.get('sub', 'anonymous')}")
         return _to_forecast_model(result)
     except Exception as e:
-        logger.error(f"Error in forecast_today: {e}", exc_info=True)
-        log_event("forecast_failed", {"error": str(e), "user": auth.get('sub')}, level="error")
         raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
 
 
 @app.post("/api/forecast", response_model=TodayForecast)
-def forecast_date(req: TodayForecastRequest, auth: dict = Depends(get_auth_user)):
+def forecast_date(req: TodayForecastRequest):
     """Get prediction for a specific date."""
     target = req.date or date.today().isoformat()
     try:
@@ -168,18 +98,8 @@ def forecast_date(req: TodayForecastRequest, auth: dict = Depends(get_auth_user)
             target_date=target,
             office_present=req.office_present,
         )
-        meals = result.get('employees_count')
-        log_event("forecast_custom", {
-            "date": target,
-            "office_override": req.office_present,
-            "meals": meals,
-            "user": auth.get('sub', 'unknown')
-        })
-        logger.info(f"forecast_date({target}): {meals} meals predicted for {auth.get('sub', 'anonymous')}")
         return _to_forecast_model(result)
     except Exception as e:
-        logger.error(f"Error in forecast_date({target}): {e}", exc_info=True)
-        log_event("forecast_failed", {"date": target, "error": str(e), "user": auth.get('sub')}, level="error")
         raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
 
 
