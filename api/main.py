@@ -15,6 +15,7 @@ Usage:
     uvicorn api.main:app --reload --port 8000
 """
 import time
+import logging
 from datetime import date
 from typing import Optional
 
@@ -34,6 +35,13 @@ from .models import (
 from .forecast import predict_today, get_model_info
 from .operations import get_today_entry, save_entry, get_all_entries
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="RIE BNP Paribas API",
@@ -67,19 +75,29 @@ def health():
 def forecast_today():
     """Get today's prediction from the trained cascade model."""
     today = date.today().isoformat()
-    result = predict_today(target_date=today)
-    return _to_forecast_model(result)
+    try:
+        result = predict_today(target_date=today)
+        logger.info(f"forecast_today: {result.get('employees_count')} meals predicted")
+        return _to_forecast_model(result)
+    except Exception as e:
+        logger.error(f"Error in forecast_today: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
 
 
 @app.post("/api/forecast", response_model=TodayForecast)
 def forecast_date(req: TodayForecastRequest):
     """Get prediction for a specific date."""
     target = req.date or date.today().isoformat()
-    result = predict_today(
-        target_date=target,
-        office_present=req.office_present,
-    )
-    return _to_forecast_model(result)
+    try:
+        result = predict_today(
+            target_date=target,
+            office_present=req.office_present,
+        )
+        logger.info(f"forecast_date({target}): {result.get('employees_count')} meals predicted")
+        return _to_forecast_model(result)
+    except Exception as e:
+        logger.error(f"Error in forecast_date({target}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
 
 
 def _to_forecast_model(data: dict) -> TodayForecast:

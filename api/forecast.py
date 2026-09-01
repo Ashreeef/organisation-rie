@@ -8,6 +8,7 @@ Cascade architecture:
 """
 import json
 import pickle
+import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -17,6 +18,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.calendar_utils import algerian_public_dates, ramadan_ranges  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
@@ -148,10 +151,12 @@ def predict_today(
         target_date = pd.Timestamp.now().normalize().strftime("%Y-%m-%d")
 
     d = pd.Timestamp(target_date)
+    logger.info(f"predict_today called for {target_date}")
 
     # --- Stage 1: Sub-model (office presence) ---
     if office_present is not None:
         op_pred = float(office_present)
+        logger.debug(f"Using provided office_present={op_pred}")
     else:
         op_pred = _predict_office_present(d)
 
@@ -210,7 +215,7 @@ def predict_today(
 
     notes = _build_notes(target_date, int(op_pred), ratio_pred)
 
-    return {
+    result = {
         "date": target_date,
         "office_present": int(round(op_pred)),
         "predicted_ratio": round(ratio_pred, 4),
@@ -222,6 +227,9 @@ def predict_today(
         "confidence_level": "high" if spread <= 18 else "medium" if spread <= 28 else "low",
         "recommendation_note": notes,
     }
+    
+    logger.info(f"Final prediction: {count_int} employees ({recommended} recommended), ratio={ratio_pred:.3f}")
+    return result
 
 
 def _office_from_features_row(row: pd.Series) -> Optional[float]:
@@ -247,18 +255,21 @@ def _predict_office_present(d: pd.Timestamp) -> float:
     """
     sub = _load_sub_model()
     if sub is None or sub.get("model") is None or not sub.get("features"):
+        logger.debug(f"Sub-model not available for {d.date()}, using DOW fallback")
         return _office_dow_fallback(d)
     try:
         history = pd.read_csv(DATA_DIR / "real_clean.csv", parse_dates=["Date"])
         if len(history) < 60:
+            logger.warning(f"History too short ({len(history)} rows), using DOW fallback")
             raise ValueError("historique trop court")
         from src.forecasting.daily_features import roll_office_forward
         preds = roll_office_forward(history, [d])
         val = preds.get(d)
         if val is not None and pd.notna(val):
+            logger.debug(f"Predicted office_present={val:.1f} for {d.date()}")
             return float(val)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Error predicting office_present for {d.date()}: {e}. Using DOW fallback.")
     return _office_dow_fallback(d)
 
 
