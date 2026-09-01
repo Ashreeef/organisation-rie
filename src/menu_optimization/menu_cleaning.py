@@ -106,7 +106,7 @@ COOKING_PATTERNS = {
 TRADITIONAL_PATTERNS = (
     r'couscous|tajine|tadjin|tajin|chekhchoukha|tchekhchoukha|chekchouka|doulma|mtawem|mtewem|'
     r'chtitha|rechta|rachta|tlitli|kbab|chichtaouk|chiche taouk|batata fliou|'
-    r'kefta|chawarma|dar el kaid|berkoukes|trida|zviti|chorba|harira|brik|bourek|maadnoussia|marhaba'
+    r'kefta|chawarma|dar el kaid|berkoukes|trida|zviti|chorba|harira|brik|bourek|maadnoussia|marhaba|navarin'
 )
 
 ACCOMPANIMENT_PATTERNS = {

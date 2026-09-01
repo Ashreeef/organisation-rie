@@ -8,7 +8,6 @@ import { SectionHeader } from '@/components/shared/section-header';
 import { api } from '@/lib/api';
 import type { MenuItem } from '@/lib/types';
 import { getDishesByCategory, DISH_CATEGORIES, MENU_STATS } from '@/lib/menu-catalog';
-import { formatDZD } from '@/lib/format';
 import { Star, ChefHat, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,11 +33,11 @@ function getPopularity(rate: number) {
 }
 
 const weeklyPlan = [
-  { day: 'Lundi', menuId: 'menu-1' },
-  { day: 'Mardi', menuId: 'menu-2' },
-  { day: 'Mercredi', menuId: 'menu-3' },
-  { day: 'Jeudi', menuId: 'menu-4' },
-  { day: 'Vendredi', menuId: 'menu-1' },
+  { day: 'Dimanche', menuId: 'menu-1' },
+  { day: 'Lundi', menuId: 'menu-2' },
+  { day: 'Mardi', menuId: 'menu-3' },
+  { day: 'Mercredi', menuId: 'menu-4' },
+  { day: 'Jeudi', menuId: 'menu-1' },
 ];
 
 export default function MenusPage() {
@@ -72,7 +71,6 @@ export default function MenusPage() {
                 <th className="pb-3 pr-4 font-medium text-muted-foreground">Menu</th>
                 <th className="pb-3 pr-4 font-medium text-muted-foreground">Popularité</th>
                 <th className="pb-3 pr-4 font-medium text-muted-foreground">Gaspillage habituel</th>
-                <th className="pb-3 pr-4 font-medium text-muted-foreground">Coût</th>
               </tr>
             </thead>
             <tbody>
@@ -102,7 +100,6 @@ export default function MenusPage() {
                         {waste.label}
                       </span>
                     </td>
-                    <td className="py-3 pr-4 text-muted-foreground">{formatDZD(menu.costPerMeal)}</td>
                   </tr>
                 );
               })}
@@ -152,10 +149,6 @@ export default function MenusPage() {
                       <span className={cn('h-2 w-2 rounded-full', waste.color.replace('text-', 'bg-'))} />
                       {waste.label}
                     </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Coût / repas</span>
-                    <span className="font-medium text-foreground">{formatDZD(menu.costPerMeal)}</span>
                   </div>
                 </div>
               </div>

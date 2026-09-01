@@ -23,18 +23,16 @@ import {
 } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
 import type { ForecastResult, MenuItem, ProcurementItem } from '@/lib/types';
-import { formatNumber, formatDZD } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
 import {
   Users,
   UtensilsCrossed,
   ChefHat,
-  Package,
   CheckCircle2,
   ChevronRight,
   Pencil,
   Star,
   TrendingDown,
-  Coins,
   Check,
   Lock,
 } from 'lucide-react';
@@ -54,7 +52,6 @@ const overrideReasons = [
 export default function PreparePage() {
   const [forecast, setForecast] = React.useState<ForecastResult | null>(null);
   const [menus, setMenus] = React.useState<MenuItem[]>([]);
-  const [procurement, setProcurement] = React.useState<ProcurementItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [todayClosed, setTodayClosed] = React.useState(false);
   const [presenceInput, setPresenceInput] = React.useState<number>(0);
@@ -87,12 +84,10 @@ export default function PreparePage() {
     Promise.all([
       api.getTomorrowForecast(),
       api.getMenus(),
-      api.getProcurementItems(),
       api.getPlanningInputs(),
-    ]).then(([f, m, p, planning]) => {
+    ]).then(([f, m, planning]) => {
       setForecast(f);
       setMenus(m);
-      setProcurement(p);
       setMealCount(f.recommendedMeals);
       setPresenceInput(planning.expectedPresence || f.officePresent);
       setSelectedMenuId(planning.selectedMenuId);
@@ -116,7 +111,6 @@ export default function PreparePage() {
   });
 
   const selectedMenu = menus.find((m) => m.id === selectedMenuId);
-  const totalCost = procurement.reduce((s, i) => s + i.estimatedCost, 0);
 
   const handleOverrideConfirm = () => {
     setHasOverridden(true);
@@ -134,8 +128,7 @@ export default function PreparePage() {
     { num: 1, label: 'Fréquentation', icon: Users, done: true },
     { num: 2, label: 'Repas', icon: UtensilsCrossed, done: true },
     { num: 3, label: 'Menu', icon: ChefHat, done: true },
-    { num: 4, label: 'Approvisionnement', icon: Package, done: true },
-    { num: 5, label: 'Validation', icon: CheckCircle2, done: validated },
+    { num: 4, label: 'Validation', icon: CheckCircle2, done: validated },
   ];
 
   // ── Locked state: today not closed yet ───────────────────
@@ -401,10 +394,10 @@ export default function PreparePage() {
                 </div>
                 <div>
                   <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Coins className="h-3 w-3" /> Coût estimé
+                    <TrendingDown className="h-3 w-3" /> Impact de menu
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-foreground">
-                    {formatDZD(selectedMenu.costPerMeal)}
+                    {selectedMenu.predictedWaste < 5 ? 'Faible' : selectedMenu.predictedWaste < 8 ? 'Moyen' : 'Élevé'}
                   </p>
                 </div>
               </div>
@@ -413,50 +406,9 @@ export default function PreparePage() {
         </div>
       </Card>
 
-      {/* Step 4 — Procurement */}
-      <Card className="p-6">
-        <StepHeader num={4} icon={Package} title="Approvisionnement" />
-        <p className="mt-2 text-sm text-muted-foreground">
-          Quantités nécessaires pour {formatNumber(mealCount)} repas — {selectedMenu?.name}
-        </p>
-        <div className="mt-4 space-y-2">
-          {procurement.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-4 py-3"
-            >
-              <div>
-                <p className="text-sm font-medium text-foreground">{item.ingredient}</p>
-                <p className="text-xs text-muted-foreground">
-                  Besoin : {item.quantityRequired} {item.unit} · Stock : {item.currentStock} {item.unit}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold text-foreground">
-                  À commander : {item.quantityToOrder} {item.unit}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDZD(item.estimatedCost)} · {item.supplier}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-          <p className="text-sm font-semibold text-primary">Total estimé</p>
-          <p className="text-xl font-bold text-primary">{formatDZD(totalCost)}</p>
-        </div>
-        <Link href="/procurement">
-          <Button variant="outline" className="mt-3 w-full">
-            Préparer la commande
-            <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        </Link>
-      </Card>
-
-      {/* Step 5 — Validation */}
+      {/* Step 4 — Validation */}
       <Card className={cn('p-6', validated && 'border-success/30 bg-success/5')}>
-        <StepHeader num={5} icon={CheckCircle2} title="Validation" />
+        <StepHeader num={4} icon={CheckCircle2} title="Validation" />
         {validated ? (
           <div className="mt-4 flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
@@ -491,10 +443,6 @@ export default function PreparePage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Menu</span>
                   <span className="font-medium text-foreground">{selectedMenu?.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Commande estimée</span>
-                  <span className="font-medium text-foreground">{formatDZD(totalCost)}</span>
                 </div>
               </div>
             </div>

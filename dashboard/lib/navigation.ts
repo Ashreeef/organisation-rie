@@ -57,12 +57,6 @@ export const navSections: NavSection[] = [
         icon: 'TrendingUp',
         description: 'Vue d’ensemble pour le management',
       },
-      {
-        label: 'Économies',
-        href: '/savings',
-        icon: 'Banknote',
-        description: 'Impact financier et économies',
-      },
     ],
   },
   {

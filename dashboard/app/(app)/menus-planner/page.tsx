@@ -44,13 +44,13 @@ import {
  * data/processed/planned_menus.csv via l'API.
  */
 
-// Ordre de la semaine algérienne : Dimanche → Jeudi (DOW JS : Dimanche=6, ... Jeudi=3)
+// Ordre réel de la semaine locale BNP : Dimanche → Jeudi
 const WEEKDAYS: { dow: number; label: string }[] = [
-  { dow: 6, label: 'Dimanche' },
-  { dow: 0, label: 'Lundi' },
-  { dow: 1, label: 'Mardi' },
-  { dow: 2, label: 'Mercredi' },
-  { dow: 3, label: 'Jeudi' },
+  { dow: 0, label: 'Dimanche' },
+  { dow: 1, label: 'Lundi' },
+  { dow: 2, label: 'Mardi' },
+  { dow: 3, label: 'Mercredi' },
+  { dow: 4, label: 'Jeudi' },
 ];
 
 // Entrées — valeurs canoniques issues des données historiques (menu_cleaning :
@@ -110,13 +110,26 @@ function isoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Renvoie les 5 prochains jours ouvrés (Dim→Jeu) à partir de `from`. */
+/** Renvoie les 5 jours ouvrés de la semaine locale (Dimanche → Jeudi). */
+function isWorkday(dow: number): boolean {
+  return [0, 1, 2, 3, 4].includes(dow); // DOW JS: 0=Dimanche, ..., 4=Jeudi
+}
+
+function startOfLocalWorkWeek(from: Date): Date {
+  const start = new Date(from);
+  while (start.getDay() !== 0) {
+    start.setDate(start.getDate() - 1);
+  }
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
 function nextWorkDays(from: Date, n = 5): Date[] {
   const out: Date[] = [];
-  const cursor = new Date(from);
+  const cursor = startOfLocalWorkWeek(from);
   while (out.length < n) {
     const dow = cursor.getDay();
-    if (dow === 6 || (dow >= 0 && dow <= 3)) {
+    if (isWorkday(dow)) {
       out.push(new Date(cursor));
     }
     cursor.setDate(cursor.getDate() + 1);
@@ -144,10 +157,20 @@ export default function MenusPlannerPage() {
 
   const load = React.useCallback(async () => {
     const start = new Date();
-    const workDays = nextWorkDays(start, 5);
-    const first = workDays[0];
-    const last = workDays[workDays.length - 1];
+    const alignedStart = startOfLocalWorkWeek(start);
+    const alignedDays: Date[] = [];
+    let cursor = new Date(alignedStart);
 
+    for (let i = 0; i < 5; i += 1) {
+      alignedDays.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+      while (!isWorkday(cursor.getDay())) {
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    const first = alignedDays[0];
+    const last = alignedDays[alignedDays.length - 1];
     const monthFmt = (d: Date) =>
       `${d.toLocaleDateString('fr-FR', { day: 'numeric' })} ${d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`;
     setWeekStartLabel(`${monthFmt(first)} – ${monthFmt(last)}`);
@@ -160,7 +183,7 @@ export default function MenusPlannerPage() {
     }
     const map = new Map(planned.map((m) => [m.date, m]));
 
-    setDays(workDays.map((d) => {
+    setDays(alignedDays.map((d) => {
       const key = isoDate(d);
       const existing = map.get(key);
       return {
@@ -242,14 +265,37 @@ export default function MenusPlannerPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-fade-in">
       {/* ── En-tête ─────────────────────────────────────────── */}
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
-          <CalendarDays className="h-6 w-6 text-primary" />
-          Planificateur de menus
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Semaine de travail (Dimanche → Jeudi) · {weekStartLabel}
-        </p>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="rounded-lg bg-primary/10 p-2 text-primary">
+            <CalendarDays className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Planification hebdomadaire</h1>
+            <p className="text-sm text-muted-foreground">
+              Semaine de travail (Dimanche → Jeudi) · {weekStartLabel}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          {[
+            { step: '1', title: 'Menu', text: 'Choisir les repas de la semaine' },
+            { step: '2', title: 'Vérif', text: 'Contrôler chaque jour' },
+            { step: '3', title: 'Sauvegarde', text: 'Enregistrer la semaine' },
+            { step: '4', title: 'Prévision', text: 'Préparer les 7 jours' },
+          ].map((item) => (
+            <div key={item.step} className="rounded-xl border border-border bg-card p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary">
+                  {item.step}
+                </span>
+                <span className="text-sm font-semibold text-foreground">{item.title}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">{item.text}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* ── Actions ─────────────────────────────────────────── */}
@@ -262,14 +308,14 @@ export default function MenusPlannerPage() {
         </Button>
         <Button variant="outline" size="lg" onClick={handleRegenerate}>
           <RefreshCw className="mr-2 h-4 w-4" />
-          Régénérer les features
+          Générer les prévisions
         </Button>
         {lastRegen && (
           <span className="text-xs text-muted-foreground">{lastRegen}</span>
         )}
       </div>
 
-      {/* ── Les 5 jours, un par carte (libre/relaxé) ────────── */}
+      {/* ── Les 5 jours ouvrés (Dimanche → Jeudi) ────────── */}
       <div className="space-y-4">
         {days.map((day, idx) => {
           const dowLabel = WEEKDAYS.find((w) => w.dow === day.dow)?.label ?? '';

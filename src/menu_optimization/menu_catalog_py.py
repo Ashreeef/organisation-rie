@@ -289,16 +289,25 @@ def map_menu_features(
     rows = []
     for i, (p1, p2) in enumerate(zip(col1.values, col2.values)):
         dish = find_dish(p1, p1_explicit.get(i) if p1_explicit else None)
+        dish2 = find_dish(p2, p2_explicit.get(i) if p2_explicit else None)
         acc = find_accompaniment(p2, p2_explicit.get(i) if p2_explicit else None)
+        candidates = [c for c in [dish, dish2] if c is not None]
 
-        if dish is not None:
-            cat_feats = _category_features(dish["category"])
-            band_feats = _ratio_band_features(dish.get("ratio_effect", "moyen"))
-            typical = _bound_ratio(dish.get("ratio_effect", "moyen"))
-            if dish.get("typical_ratio") is not None:
-                typical = float(dish["typical_ratio"])
-            traditional = 1 if dish.get("is_traditional") else 0
-            premium = 1 if dish.get("is_premium") else 0
+        if candidates:
+            selected = candidates[0]
+            if len(candidates) > 1:
+                trad_candidates = [c for c in candidates if c.get("category") == "traditionnel"]
+                if trad_candidates:
+                    selected = trad_candidates[0]
+                elif any(c.get("is_premium") for c in candidates):
+                    selected = max(candidates, key=lambda c: (bool(c.get("is_premium")), float(c.get("typical_ratio", 0.0))))
+            cat_feats = _category_features(selected["category"])
+            band_feats = _ratio_band_features(selected.get("ratio_effect", "moyen"))
+            typical = _bound_ratio(selected.get("ratio_effect", "moyen"))
+            if selected.get("typical_ratio") is not None:
+                typical = float(selected["typical_ratio"])
+            traditional = int(any(c.get("is_traditional") for c in candidates))
+            premium = int(any(c.get("is_premium") for c in candidates))
             mapped = 1
         else:
             cat_feats = _category_features(None)
@@ -490,17 +499,25 @@ def apply_menu_text_features(df: pd.DataFrame, fitted: dict) -> pd.DataFrame:
     """Applique les transformeurs pré-ajustés (ex : serving) pour produire
     menu_combined, tfidf_svd_*, plat1_te, conditions_te — sans re-fit.
 
-    Si `fitted` est absent, retombe sur la logique historique de re-fit local
-    (comportement dégradé ; conserver uniquement pour rétrocompatibilité).
+    Si `fitted` est absent ou incomplet (par ex. bundle serialisé avant l'ajustage
+    complet), on refit localement sur les données passées en entrée. Ce repli est
+    explicite et sécurise la production, sans réintroduire le skew pendant le
+    serving si le bundle est valide.
     """
     out = df.copy()
     menu_combined = _build_menu_combined(out)
     out["menu_combined"] = menu_combined.values
 
-    if fitted is None or "vectorizer" not in fitted:
-        # Repli historique : re-fit sur les données disponibles (dégradé).
+    needs_local_fit = (
+        fitted is None or "vectorizer" not in fitted or "svd" not in fitted
+        or not hasattr(fitted["vectorizer"], "idf_")
+        or not hasattr(fitted["svd"], "components_")
+    )
+
+    if needs_local_fit:
         from sklearn.decomposition import TruncatedSVD  # noqa: E402
         from sklearn.feature_extraction.text import TfidfVectorizer  # noqa: E402
+
         menu_texts = menu_combined.replace("", "empty")
         vectorizer = TfidfVectorizer(**_TFIDF_PARAMS)
         svd = TruncatedSVD(n_components=_SVD_COMPONENTS, random_state=42)
@@ -508,9 +525,22 @@ def apply_menu_text_features(df: pd.DataFrame, fitted: dict) -> pd.DataFrame:
         tfidf_comps = svd.fit_transform(tfidf_mat)
         for i in range(_SVD_COMPONENTS):
             out[f"tfidf_svd_{i}"] = tfidf_comps[:, i]
+
+        if fitted is not None and fitted.get("plat1_map") and "plat_principal_1" in out.columns:
+            out["plat1_te"] = out["plat_principal_1"].map(
+                fitted["plat1_map"]).fillna(fitted.get("plat1_global", 0.0))
+        elif "plat1_te" in out.columns:
+            out["plat1_te"] = out["plat1_te"].fillna(0.0)
+
+        if fitted is not None and fitted.get("conditions_map") and "weather_conditions" in out.columns:
+            out["conditions_te"] = out["weather_conditions"].map(
+                fitted["conditions_map"]).fillna(fitted.get("conditions_global", 0.0))
+        elif "conditions_te" in out.columns:
+            out["conditions_te"] = out["conditions_te"].fillna(0.0)
+
         return out
 
-    # Transform (pas de re-fit)
+    # Transform (pas de re-fit) avec le bundle validé.
     tfidf_mat = fitted["vectorizer"].transform(menu_combined.replace("", "empty"))
     tfidf_comps = fitted["svd"].transform(tfidf_mat)
     for i in range(_SVD_COMPONENTS):

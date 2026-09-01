@@ -57,6 +57,7 @@ export default function DashboardPage() {
   const [todayMenu, setTodayMenu] = React.useState<MenuPlan | null>(null);
   const [chartData, setChartData] = React.useState<ForecastVsActualPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [hasTodayPlan, setHasTodayPlan] = React.useState(false);
 
   // Bilan form
   const [prepared, setPrepared] = React.useState('');
@@ -65,6 +66,37 @@ export default function DashboardPage() {
 
   const refresh = React.useCallback(async () => {
     const store = api.init();
+    const todayDate = new Date().toISOString().slice(0, 10);
+
+    try {
+      const plan = await api.getPlannedMenu(todayDate);
+      setTodayMenu(plan);
+      const hasPlan = !!plan && [plan.entrees, plan.plat_principal_1, plan.plat_principal_2]
+        .some((v) => (v ?? '').toString().trim().length > 0);
+      setHasTodayPlan(hasPlan);
+      if (!hasPlan) {
+        setForecast(null);
+        setChartData([]);
+        setToday(api.getTodayState());
+        setPrepared(store.today.bilan?.prepared?.toString() ?? '');
+        setServed(store.today.bilan?.served?.toString() ?? '');
+        setComment(store.today.bilan?.comment ?? '');
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setTodayMenu(null);
+      setHasTodayPlan(false);
+      setForecast(null);
+      setChartData([]);
+      setToday(api.getTodayState());
+      setPrepared(store.today.bilan?.prepared?.toString() ?? '');
+      setServed(store.today.bilan?.served?.toString() ?? '');
+      setComment(store.today.bilan?.comment ?? '');
+      setLoading(false);
+      return;
+    }
+
     const [f, chart] = await Promise.all([
       api.getTodayForecast(),
       api.getForecastVsActual(14),
@@ -75,18 +107,49 @@ export default function DashboardPage() {
     setPrepared(store.today.bilan?.prepared?.toString() ?? '');
     setServed(store.today.bilan?.served?.toString() ?? '');
     setComment(store.today.bilan?.comment ?? '');
-    try {
-      const plan = await api.getPlannedMenu(new Date().toISOString().slice(0, 10));
-      setTodayMenu(plan);
-    } catch {
-      setTodayMenu(null);
-    }
     setLoading(false);
   }, []);
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
-  if (loading || !forecast || !today) return <DashboardSkeleton />;
+  if (loading || !today) return <DashboardSkeleton />;
+
+  if (!forecast || !hasTodayPlan) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className={cn('flex items-center gap-3 rounded-lg border p-4', statusUI[today.status].bg, 'border-current/10')}>
+          <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', statusUI[today.status].bg)}>
+            {React.createElement(statusUI[today.status].icon, { className: cn('h-6 w-6', statusUI[today.status].color) })}
+          </div>
+          <div className="flex-1">
+            <p className={cn('text-sm font-semibold', statusUI[today.status].color)}>{statusUI[today.status].label}</p>
+            <p className="mt-0.5 text-sm text-muted-foreground capitalize">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          </div>
+        </div>
+
+        <Card className="border-dashed border-amber-300 bg-amber-50/50 p-6">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Aucune prévision affichée pour aujourd'hui</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Le système n’affiche une recommandation que lorsqu’un menu est bien planifié pour la journée.
+                Saisissez le menu de la semaine dans le planificateur pour obtenir une estimation réaliste.
+              </p>
+              <div className="mt-4">
+                <Link href="/menus-planner">
+                  <Button variant="outline">
+                    Ouvrir le planificateur
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   const status = today.status;
   const ui = statusUI[status];
