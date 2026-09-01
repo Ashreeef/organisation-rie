@@ -244,6 +244,15 @@ export interface DailyMenu {
   items: MenuElement[];
 }
 
+export interface MenuPlan {
+  date: string;
+  entrees: string;
+  plat_principal_1: string;
+  plat_principal_2: string;
+  plat_principal_1_id?: string;
+  plat_principal_2_id?: string;
+}
+
 export interface ServiceDay {
   date: string;
   status: ServiceStatus;

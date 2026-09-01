@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Banknote,
   Settings,
+  CalendarDays,
   ChevronLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   TrendingUp,
   Banknote,
   Settings,
+  CalendarDays,
 };
 
 interface SidebarProps {

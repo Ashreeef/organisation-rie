@@ -29,9 +29,11 @@ from .models import (
     ModelMetricsResponse,
     HealthResponse,
     BlendScores,
+    MenuPlan,
 )
 from .forecast import predict_today, get_model_info
 from .operations import get_today_entry, save_entry, get_all_entries
+from .menus import get_menus, get_menu, upsert_menu, delete_menu
 
 app = FastAPI(
     title="RIE BNP Paribas API",
@@ -140,3 +142,43 @@ def model_metrics():
     """Get model info and metrics."""
     info = get_model_info()
     return ModelMetricsResponse(**info)
+
+
+# ---------------------------------------------------------------------------
+# Menus planifiés
+# ---------------------------------------------------------------------------
+
+@app.get("/api/menus", response_model=list[MenuPlan])
+def list_menus(start: Optional[str] = None, end: Optional[str] = None):
+    """Liste les menus planifiés (optionnellement bornés par date)."""
+    return [MenuPlan(**m) for m in get_menus(start=start, end=end)]
+
+
+@app.get("/api/menus/{date}", response_model=MenuPlan)
+def read_menu(date: str):
+    """Retourne le menu planifié d'une date précise."""
+    m = get_menu(date)
+    if m is None:
+        raise HTTPException(status_code=404, detail=f"Aucun menu pour {date}")
+    return MenuPlan(**m)
+
+
+@app.post("/api/menus", response_model=MenuPlan)
+def create_menu(entry: MenuPlan):
+    """Crée ou met à jour le menu planifié d'une date."""
+    return MenuPlan(**upsert_menu(entry.model_dump()))
+
+
+@app.put("/api/menus/{date}", response_model=MenuPlan)
+def update_menu(date: str, entry: MenuPlan):
+    """Met à jour le menu planifié d'une date précise."""
+    entry.date = date
+    return MenuPlan(**upsert_menu(entry.model_dump()))
+
+
+@app.delete("/api/menus/{date}")
+def remove_menu(date: str):
+    """Supprime le menu planifié d'une date."""
+    if not delete_menu(date):
+        raise HTTPException(status_code=404, detail=f"Aucun menu pour {date}")
+    return {"deleted": True, "date": date}

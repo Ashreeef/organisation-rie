@@ -14,7 +14,7 @@ from typing import Tuple, List, Optional
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from src.calendar_utils import algerian_public_dates, ramadan_ranges  # noqa: E402
-from src.menu_optimization.menu_cleaning import extract_menu_features  # noqa: E402
+from src.menu_optimization.menu_catalog_py import build_menu_features, CANONICAL_MENU_FEATURES  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -49,12 +49,15 @@ def clean_and_deduplicate(df: pd.DataFrame, has_target: bool) -> pd.DataFrame:
     if has_target and RAMADAN_OUTLIER in out["Date"].values:
         out = out[out["Date"] != RAMADAN_OUTLIER].copy()
 
-    menu_feats = extract_menu_features(out)
-    out = pd.concat([out, menu_feats], axis=1)
+    # Features menu unifiées (catalogue canonique + repli regex + indicateurs
+    # dérivés) — fonction partagée entraînement/serving (menu_catalog_py).
+    out = build_menu_features(out)
 
     menu_cols = [c for c in out.columns
                  if c.startswith("menu_") or c.startswith("entree_")
                  or c in {"n_entree_choices", "has_2nd_plat", "is_menu_chef"}]
+    menu_cols = [c for c in menu_cols if c in out.columns]
+    menu_cols = list(dict.fromkeys(menu_cols + list(CANONICAL_MENU_FEATURES)))
     raw_text_cols = ["entrées", "plat pricipal_1", "plat principal_2",
                      "conditions", "type precipitation"]
 

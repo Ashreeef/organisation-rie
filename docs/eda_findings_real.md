@@ -6,14 +6,14 @@ Generated from `02_eda.ipynb` on real_clean.csv (605 rows, May 2022 - Dec 2024).
 - **office_present**: mean=545, std=57, range=[270, 628]
 - **employees_count**: mean=329, std=44, range=[1, 581]
 - **ratio**: mean=0.606, std=0.067, range=[0.002, 0.902]
-- **CV(ratio)** = 0.1035 vs **CV(cantine)** = 0.1285 (1.2x more stable)
+- **CV(ratio)** = 0.1112 vs **CV(cantine)** = 0.1349 (1.2x more stable)
 
 ## Top 5 Factors Driving Higher Ratio
 1. **DOW effect**: Systematic variation by day of week
 2. **Seasonality**: Clear monthly patterns with Ramadan and summer dips
 3. **Menu type**: Traditional Algerian dishes correlate with higher attendance
 4. **Second dish option**: plat_principal_2 presence may increase attendance
-5. **Stable office-cantine relationship**: Pearson r=0.633
+5. **Stable office-cantine relationship**: Pearson r=0.608
 
 ## Top 5 Factors Driving Lower Ratio
 1. **Ramadan**: Significant attendance reduction during fasting month

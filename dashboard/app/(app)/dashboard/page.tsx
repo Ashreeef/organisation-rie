@@ -11,7 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/shared/section-header';
 import { ForecastChart } from '@/components/shared/forecast-chart';
 import { api } from '@/lib/api';
-import type { ForecastVsActualPoint, ForecastResult } from '@/lib/types';
+import type { ForecastVsActualPoint, ForecastResult, MenuPlan } from '@/lib/types';
+import { findDishByName, DISHES, DISH_CATEGORIES, type Dish } from '@/lib/menu-catalog';
 import { formatNumber, formatPercent } from '@/lib/format';
 import {
   Users,
@@ -53,6 +54,7 @@ const statusUI: Record<ServiceStatus, { label: string; color: string; bg: string
 export default function DashboardPage() {
   const [forecast, setForecast] = React.useState<ForecastResult | null>(null);
   const [today, setToday] = React.useState<TodayState | null>(null);
+  const [todayMenu, setTodayMenu] = React.useState<MenuPlan | null>(null);
   const [chartData, setChartData] = React.useState<ForecastVsActualPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
 
@@ -73,6 +75,12 @@ export default function DashboardPage() {
     setPrepared(store.today.bilan?.prepared?.toString() ?? '');
     setServed(store.today.bilan?.served?.toString() ?? '');
     setComment(store.today.bilan?.comment ?? '');
+    try {
+      const plan = await api.getPlannedMenu(new Date().toISOString().slice(0, 10));
+      setTodayMenu(plan);
+    } catch {
+      setTodayMenu(null);
+    }
     setLoading(false);
   }, []);
 
@@ -152,6 +160,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Today's forecast (clean, no ML jargon) ─────────── */}
+      <MenuRatioBanner plan={todayMenu} />
       {status !== 'cloturee' && (
         <Card className="border-primary/20 bg-gradient-to-br from-primary/[0.04] to-card p-6">
           <div className="flex items-center justify-between">
@@ -386,6 +395,51 @@ export default function DashboardPage() {
 /* -------------------------------------------------------------------------- */
 /*  Sub-components                                                             */
 /* -------------------------------------------------------------------------- */
+
+function MenuRatioBanner({ plan }: { plan: MenuPlan | null }) {
+  let dish: Dish | undefined;
+  if (plan) {
+    dish =
+      DISHES.find((d) => d.id === plan.plat_principal_1_id) ??
+      findDishByName(plan.plat_principal_1 ?? '');
+  }
+  if (!dish) return null;
+
+  const cat = DISH_CATEGORIES.find((c) => c.id === dish!.category);
+  const band = dish.is_premium
+    ? { tone: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', label: 'Journée premium', msg: 'Forte affluence attendue — prévoir une préparation renforcée.' }
+    : dish.ratio_effect === 'très élevé' || dish.ratio_effect === 'élevé'
+      ? { tone: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Journée à forte affluence', msg: 'Participation attendue élevée — préparer au-delà du plat principal.' }
+      : dish.ratio_effect === 'faible'
+        ? { tone: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-200', label: 'Journée calme', msg: 'Participation attendue plus faible — ajuster les quantités pour limiter le gaspillage.' }
+        : null;
+
+  if (!band) return null;
+
+  const ratioPct = (dish.typical_ratio * 100).toFixed(1).replace('.', ',');
+
+  return (
+    <div className={cn('flex items-center gap-3 rounded-lg border p-4', band.bg, band.border)}>
+      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', band.bg)}>
+        <ChefHat className={cn('h-5 w-5', band.tone)} />
+      </div>
+      <div className="flex-1">
+        <p className={cn('text-sm font-semibold', band.tone)}>
+          {band.label}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            · {dish.name}
+            {cat ? ` · ${cat.label}` : ''}
+          </span>
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{band.msg}</p>
+      </div>
+      <div className="text-right">
+        <p className="text-xs text-muted-foreground">Ratio attendu</p>
+        <p className="text-lg font-bold text-foreground">{ratioPct}%</p>
+      </div>
+    </div>
+  );
+}
 
 function ReviewItem({ label, value }: { label: string; value: string }) {
   return (

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/shared/section-header';
 import { api } from '@/lib/api';
 import type { MenuItem } from '@/lib/types';
+import { getDishesByCategory, DISH_CATEGORIES, MENU_STATS } from '@/lib/menu-catalog';
 import { formatDZD } from '@/lib/format';
 import { Star, ChefHat, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -163,14 +164,69 @@ export default function MenusPage() {
         </div>
       </Card>
 
-      {/* Reference catalog notice */}
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-        <Info className="h-3.5 w-3.5 shrink-0" />
-        <p>
-          Catalogue de référence — Les menus et leurs caractéristiques seront connectés
-          à la base de données du RIE.
-        </p>
-      </div>
+      {/* Reference catalog: canonical dishes with ratio bands */}
+      <Card className="p-6">
+        <SectionHeader
+          title="Catalogue canonique des plats"
+          description={`${MENU_STATS.totalDishes} plats · ${MENU_STATS.highRatioDishes} à fort ratio · source partagée avec le pipeline (menu-catalog.json)`}
+        />
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {DISH_CATEGORIES.map((cat) => {
+            const dishes = getDishesByCategory()[cat.id];
+            return (
+              <div key={cat.id} className="overflow-hidden rounded-xl border border-border bg-card">
+                <div
+                  className="flex items-center gap-2 border-b border-border px-4 py-3"
+                  style={{ backgroundColor: `${cat.color}0f` }}
+                >
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cat.color }} />
+                  <p className="text-sm font-semibold text-foreground">{cat.label}</p>
+                  <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {dishes.length} plats
+                  </span>
+                </div>
+                <ul className="divide-y divide-border/60">
+                  {dishes.map((d) => (
+                    <li key={d.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="flex-1 text-sm text-foreground">{d.name}</span>
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {(d.typical_ratio * 100).toFixed(0).replace('.', ',')}%
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'shrink-0 px-2 py-0.5 text-[10px] font-semibold',
+                          ratioBadgeClass(d.ratio_effect),
+                        )}
+                      >
+                        {d.ratio_effect}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-5 flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <Info className="h-3.5 w-3.5 shrink-0" />
+          <p>
+            Ce catalogue (en lecture seule) est la source de vérité unique partagée avec le pipeline
+            de features (<code>build_menu_features</code>) et le planificateur de menus. Le pourcentage
+            indique le ratio de participation attendu, et le badge sa bande.
+          </p>
+        </div>
+      </Card>
     </div>
   );
+}
+
+function ratioBadgeClass(effect: string) {
+  if (effect === 'très élevé' || effect === 'élevé') {
+    return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+  }
+  if (effect === 'faible') {
+    return 'bg-sky-100 text-sky-700 border-sky-200';
+  }
+  return 'bg-amber-100 text-amber-700 border-amber-200';
 }

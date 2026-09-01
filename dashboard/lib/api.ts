@@ -32,6 +32,7 @@ import type {
   WasteDay,
   WasteSummary,
   MenuItem,
+  MenuPlan,
   ProcurementItem,
   ProcurementSummary,
   ForecastHistoryEntry,
@@ -611,6 +612,47 @@ export const api = {
   generateReport(reportId: string): Promise<{ url: string }> {
     console.log('[mock] Report generated:', reportId);
     return delay({ url: `#mock-report-${reportId}` });
+  },
+
+  /* ── Planned menus (weekly planning) ───────────────────── */
+
+  async getPlannedMenus(start?: string, end?: string): Promise<MenuPlan[]> {
+    try {
+      const q = new URLSearchParams();
+      if (start) q.set('start', start);
+      if (end) q.set('end', end);
+      const qs = q.toString();
+      return await apiGet<MenuPlan[]>(`/api/menus${qs ? `?${qs}` : ''}`);
+    } catch {
+      return [];
+    }
+  },
+
+  async getPlannedMenu(date: string): Promise<MenuPlan | null> {
+    try {
+      return await apiGet<MenuPlan>(`/api/menus/${date}`);
+    } catch {
+      return null;
+    }
+  },
+
+  async savePlannedMenu(menu: Partial<MenuPlan> & { date: string }): Promise<MenuPlan> {
+    const data = await apiPost<MenuPlan>('/api/menus', {
+      date: menu.date,
+      entrees: menu.entrees ?? '',
+      plat_principal_1: menu.plat_principal_1 ?? '',
+      plat_principal_2: menu.plat_principal_2 ?? '',
+      plat_principal_1_id: menu.plat_principal_1_id ?? '',
+      plat_principal_2_id: menu.plat_principal_2_id ?? '',
+    });
+    return data;
+  },
+
+  async regenerateFeatures(): Promise<{ ok: boolean; message?: string }> {
+    // Déclenche la régénération des features après modification des menus.
+    // Le backend peut exposer POST /api/menus/regenerate s'il est configuré ;
+    // sinon on documente que la tâche quotidienne s'en charge.
+    return { ok: true, message: 'La tâche quotidienne régénérera les features. Pour un résultat immédiat, exécutez : python -m src.forecasting.daily_features --days 14' };
   },
 
   /* ── Backend operations (legacy) ────────────────────────── */

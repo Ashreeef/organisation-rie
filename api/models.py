@@ -66,3 +66,12 @@ class HealthResponse(BaseModel):
     status: str
     models_loaded: int
     uptime: str
+
+
+class MenuPlan(BaseModel):
+    date: str
+    entrees: str = ""
+    plat_principal_1: str = ""
+    plat_principal_2: str = ""
+    plat_principal_1_id: str = ""
+    plat_principal_2_id: str = ""

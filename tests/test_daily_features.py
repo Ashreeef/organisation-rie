@@ -118,7 +118,7 @@ class TestFidelityReproduction:
     SAMPLE_COLS = [
         "op_lag_7", "op_dow_mean", "op_annual_zscore", "yoy_ratio_5w",
         "bridge_day", "is_any_holiday", "temp_cold", "heavy_rain",
-        "kw_couscous", "plat1_te", "is_sunday_workday", "op_roll_mean_28",
+        "menu_is_traditional", "menu_is_premium", "plat1_te", "op_roll_mean_28",
     ]
 
     def test_in_history_matches_features_train(self, tmp_path, history):
@@ -136,10 +136,67 @@ class TestFidelityReproduction:
             assert both_nan or pytest.approx(a, abs=1e-6) == b, col
 
 
-class TestGenerateLive:
+class TestTextFeatureConsistency:
+    """Les features texte (TF-IDF/SVD + target encoding) du serving doivent
+    reproduire EXACTEMENT celles de l'entraînement, via les transformeurs
+    persistés (plus aucun re-fit live -> pas de skew entraînement/serving)."""
+
+    def test_persisted_transformers_reproduce_training(self):
+        import pickle
+
+        from src.menu_optimization.menu_catalog_py import (
+            apply_menu_text_features,
+            fit_menu_text_features,
+        )
+
+        train = pd.read_csv(DATA_DIR / "features_train.csv")
+        dep = pickle.load(open(MODELS_DIR / "_deployment.pkl", "rb"))
+
+        assert "text_feats" in dep, "le bundle doit persister les transformeurs texte"
+        fitted = dep["text_feats"]
+
+        # Graph de contrôle : re-fitter sur l'entraînement donne un transformeur
+        # "identique" — mais surtout, appliquer les transformeurs persistés sur les
+        # mêmes lignes doit répliquer les colonnes stockées (pas de re-fit au serving).
+        out = apply_menu_text_features(train, fitted)
+
+        for col in ["plat1_te", "conditions_te"]:
+            assert col in out.columns
+            a = train[col].astype(float).values
+            b = out[col].astype(float).values
+            assert np.corrcoef(a, b)[0, 1] > 0.999, col
+
+        for i in range(8):
+            c = f"tfidf_svd_{i}"
+            a = train[c].astype(float).values
+            b = out[c].astype(float).values
+            assert np.corrcoef(a, b)[0, 1] > 0.999, c
+
+    def test_apply_handles_unseen_categories_with_global_fallback(self):
+        import pickle
+
+        from src.menu_optimization.menu_catalog_py import apply_menu_text_features
+
+        dep = pickle.load(open(MODELS_DIR / "_deployment.pkl", "rb"))
+        fitted = dep["text_feats"]
+
+        # une ligne avec un plat inconnu + menu vide doit retomber sur la moyenne
+        # globale (pas de crash, valeur finie).
+        df = pd.DataFrame({
+            "plat_principal_1": ["Plat totalement inconnu du catalogue"],
+            "plat_principal_2": [None],
+            "weather_conditions": ["condition_inconnue"],
+        })
+        out = apply_menu_text_features(df, fitted)
+        assert out["plat1_te"].iloc[0] == pytest.approx(fitted["plat1_global"], abs=1e-6)
+        assert out["tfidf_svd_0"].notna().all()
+
+
+
     def test_output_schema_and_no_nans(self, tmp_path):
         dep_cols = _deployment_feature_cols()
-        assert dep_cols and len(dep_cols) == 126
+        assert dep_cols and len(dep_cols) == 157
+        assert not any(c.startswith("kw_") for c in dep_cols)
         out = generate_features(
             target_dates=[pd.Timestamp("2026-09-02")],
             out_path=tmp_path / "live.csv",

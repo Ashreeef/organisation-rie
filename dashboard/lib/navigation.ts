@@ -17,6 +17,12 @@ export const navSections: NavSection[] = [
         description: 'Préparation du prochain service',
       },
       {
+        label: 'Planifier les menus',
+        href: '/menus-planner',
+        icon: 'CalendarDays',
+        description: 'Menus de la semaine (Dimanche - Jeudi)',
+      },
+      {
         label: 'Menus',
         href: '/menus',
         icon: 'UtensilsCrossed',

@@ -54,14 +54,39 @@ from src.calendar_utils import (  # noqa: E402
     islamic_holiday_dates,
     ramadan_ranges,
 )
+from src.menu_optimization.menu_catalog_py import (  # noqa: E402
+    build_menu_features,
+    apply_menu_text_features,
+    CANONICAL_MENU_FEATURES,
+)
 
 DATA_DIR = REPO_ROOT / "data" / "processed"
 MODELS_DIR = REPO_ROOT / "models"
 HISTORY_FILE = DATA_DIR / "real_clean.csv"
 OUT_FILE = DATA_DIR / "features_live.csv"
+PLANNED_MENUS_FILE = DATA_DIR / "planned_menus.csv"
 
 SEED = 42
 MIN_HISTORY_ROWS = 200
+
+
+def _load_planned_menus() -> pd.DataFrame:
+    """Charge les menus planifiés par le gestionnaire (CSV).
+
+    Format attendu : date,entrees,plat_principal_1,plat_principal_2[,plat_principal_1_id,plat_principal_2_id]
+    (voir data/processed/planned_menus.csv). Retourne un DataFrame indexé par
+    date (normalisée), vide si le fichier n'existe pas ou est vide.
+    """
+    base_cols = ["date", "entrees", "plat_principal_1", "plat_principal_2",
+                 "plat_principal_1_id", "plat_principal_2_id"]
+    if not PLANNED_MENUS_FILE.exists():
+        return pd.DataFrame(columns=base_cols)
+    df = pd.read_csv(PLANNED_MENUS_FILE)
+    if df.empty or "date" not in df.columns:
+        return pd.DataFrame(columns=base_cols)
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    df = df.set_index("date")
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -396,9 +421,14 @@ def _calendar_features(d: pd.Timestamp, min_date: pd.Timestamp) -> dict:
 
 
 def _build_workspace(
-    history: pd.DataFrame, office_preds: pd.Series
+    history: pd.DataFrame, office_preds: pd.Series, planned_menus: pd.DataFrame = None
 ) -> pd.DataFrame:
-    """Fusionne l'historique réel et les jours cibles reconstruits (météo/menu par défaut).
+    """Fusionne l'historique réel et les jours cibles reconstruits.
+
+    Les jours cibles utilisent :
+      - le menu planifié ('' si non renseigné) issu de ``planned_menus`` quand
+        disponible, sinon un menu vide (flags 0, TF-IDF « empty ») ;
+      - la climatologie mensuelle pour la météo (les jours futurs sont inconnus).
 
     Le workspace reproduit la chronologie *éparse* du notebook 03 : les lignes
     observées (avec valeurs réelles, y compris ratio) suivies des lignes cibles,
@@ -409,6 +439,16 @@ def _build_workspace(
 
     defaults = _weather_defaults(history)
     min_date = history["Date"].min()
+
+    if planned_menus is None:
+        planned_menus = _load_planned_menus()
+    else:
+        planned_menus = planned_menus.copy()
+    if "date" in planned_menus.columns and planned_menus.index.name != "date":
+        planned_menus["date"] = pd.to_datetime(planned_menus["date"]).dt.normalize()
+        planned_menus = planned_menus.set_index("date")
+    if not planned_menus.index.is_monotonic_increasing:
+        planned_menus = planned_menus.sort_index()
 
     rows = []
     for d, opv in office_preds.items():
@@ -434,9 +474,37 @@ def _build_workspace(
         row["wind_gust_kmh"] = row["wind_speed_kmh"]
         row["precipitation_type"] = ""
         row["weather_conditions"] = ""
-        row["plat_principal_1"] = np.nan
-        row["plat_principal_2"] = np.nan
-        row["entrees"] = np.nan
+
+        d_norm = d.normalize()
+        if d_norm in planned_menus.index:
+            pm = planned_menus.loc[d_norm]
+            def _val(col):
+                if isinstance(pm, pd.Series) and col in pm.index:
+                    v = pm[col]
+                    return v if pd.notna(v) and str(v).strip() != "" else None
+                return None
+            row["entrees"] = _val("entrees")
+            row["plat_principal_1"] = _val("plat_principal_1")
+            row["plat_principal_2"] = _val("plat_principal_2")
+            row["plat_principal_1_id"] = _val("plat_principal_1_id")
+            row["plat_principal_2_id"] = _val("plat_principal_2_id")
+            if row["entrees"] is None:
+                row["entrees"] = np.nan
+            if row["plat_principal_1"] is None:
+                row["plat_principal_1"] = np.nan
+            if row["plat_principal_2"] is None:
+                row["plat_principal_2"] = np.nan
+            if row["plat_principal_1_id"] is None:
+                row["plat_principal_1_id"] = np.nan
+            if row["plat_principal_2_id"] is None:
+                row["plat_principal_2_id"] = np.nan
+        else:
+            row["plat_principal_1"] = np.nan
+            row["plat_principal_2"] = np.nan
+            row["entrees"] = np.nan
+            row["plat_principal_1_id"] = np.nan
+            row["plat_principal_2_id"] = np.nan
+
         row["employees_count"] = np.nan
         row["ratio"] = np.nan
         rows.append(row)
@@ -588,64 +656,22 @@ def build_features(work: pd.DataFrame) -> pd.DataFrame:
     df["menu_combined"] = (df["plat_principal_1"].fillna("") + " " +
                            df["plat_principal_2"].fillna("")).apply(clean_menu_text)
 
-    kw_defs = {
-        "kw_poulet": ["poulet", "blanc de poulet", "poulet grille"],
-        "kw_boeuf": ["boeuf", "steak", "hachis", "hache", "viande"],
-        "kw_poisson": ["poisson", "merlu", "thon", "sole",
-                       "mille feuille poisson", "sardine"],
-        "kw_dinde": ["dinde", "escalope de dinde"],
-        "kw_pates": ["pates", "spaghetti", "lasagne", "rechta"],
-        "kw_riz": ["riz", "maklouba", "paella"],
-        "kw_couscous": ["couscous"],
-        "kw_tajine": ["tajine", "chtitha"],
-        "kw_pizza": ["pizza"],
-        "kw_sandwich": ["sandwich"],
-        "kw_grillade": ["grille", "roti", "brochette"],
-        "kw_panee": ["panee", "pane", "frit"],
-        "kw_traditional": ["couscous", "tajine", "rechta", "chakhchoukha",
-                           "maklouba", "berkoukes"],
-        "kw_western": ["pizza", "pates", "spaghetti", "hamburger", "burger"],
-    }
-    for name, kws in kw_defs.items():
-        df[name] = df["menu_combined"].apply(
-            lambda t: int(any(kw in t for kw in kws))
-        )
-    df["is_premium_day"] = ((df["kw_traditional"] == 1) | (df["kw_grillade"] == 1)).astype(int)
-    df["is_light_day"] = ((df["kw_pizza"] == 1) | (df["kw_sandwich"] == 1) |
-                          (df["kw_panee"] == 1)).astype(int)
-    df["has_second_dish"] = df["plat_principal_2"].notna().astype(int)
-    df["premium_x_sun"] = df["is_premium_day"] * df["is_sun"]
-    df["premium_x_thu"] = df["is_premium_day"] * df["is_thu"]
-    df["light_x_thu"] = df["is_light_day"] * df["is_thu"]
-    df["traditional_x_ramadan"] = df["kw_traditional"] * df["is_ramadan"]
+    # --- Section 4b: features canoniques du catalogue (même taxonomie qu'à
+    # l'entraînement — fonction partagée build_menu_features, voir
+    # menu_optimization/menu_catalog_py.py). Les plats non mappés retombent sur
+    # les flags regex (menu_cleaning) + le texte brut (TF-idf/SVD, cible-encodage)
+    # pour ne rien perdre.
+    df = build_menu_features(df)
 
-    from sklearn.decomposition import TruncatedSVD
-    from sklearn.feature_extraction.text import TfidfVectorizer
-
-    menu_texts = df["menu_combined"].replace("", "empty")
-    vectorizer = TfidfVectorizer(max_features=300, min_df=2)
-    tfidf_mat = vectorizer.fit_transform(menu_texts)
-    svd = TruncatedSVD(n_components=8, random_state=SEED)
-    tfidf_comps = svd.fit_transform(tfidf_mat)
-    for i in range(8):
-        df[f"tfidf_svd_{i}"] = tfidf_comps[:, i]
-
-    def kfold_target_encode(train_df, col, target, n_folds=5, smoothing=20):
-        global_mean = train_df[target].mean()
-        enc = pd.Series(np.nan, index=train_df.index)
-        from sklearn.model_selection import KFold
-        kf = KFold(n_splits=n_folds, shuffle=True, random_state=SEED)
-        for tr_idx, va_idx in kf.split(train_df):
-            tr = train_df.iloc[tr_idx]
-            stats_ = tr.groupby(col)[target].agg(["mean", "count"])
-            smooth = (stats_["count"] * stats_["mean"] + smoothing * global_mean) / \
-                     (stats_["count"] + smoothing)
-            map_ = smooth.to_dict()
-            enc.iloc[va_idx] = train_df.iloc[va_idx][col].map(map_)
-        return enc.fillna(global_mean)
-
-    df["plat1_te"] = kfold_target_encode(df, "plat_principal_1", "ratio")
-    df["conditions_te"] = kfold_target_encode(df, "weather_conditions", "ratio")
+    # --- Features texte latentes (TF-IDF/SVD) + target encoding — PARTAGÉS ---
+    # Applique les transformeurs ajustés sur l'entraînement (menu_text_transformers.pkl
+    # inclus dans _deployment.pkl) : AUCUN re-fit live -> mêmes features qu'au training.
+    _text_feats = _deployment_text_feats()
+    df = apply_menu_text_features(df, _text_feats)
+    if _text_feats is None:
+        print("WARNING: text_feats absent du bundle — features texte dégradées (re-fit local).")
+    else:
+        print("OK: features texte appliquées via transformeurs entraînement (pas de re-fit).")
 
     # --- Section 5: météo ---
     df["temp_cold"] = (df["temperature"] < 12).astype(int)
@@ -719,6 +745,24 @@ def _deployment_feature_cols() -> list:
     return None
 
 
+def _deployment_text_feats():
+    """Transformeurs texte (TF-IDF/SVD + target encoding) ajustés sur l'entraînement.
+
+    Le serving les applique tels quels (apply_menu_text_features) pour produire
+    tfidf_svd_*, plat1_te, conditions_te — identiques à l'entraînement (pas de
+    re-fit live). Retourne None si le bundle ne les contient pas (fallback dégradé).
+    """
+    path = MODELS_DIR / "_deployment.pkl"
+    if path.exists():
+        try:
+            with open(path, "rb") as f:
+                dep = pickle.load(f)
+            return dep.get("text_feats")
+        except Exception:
+            return None
+    return None
+
+
 def _fill_live_nans(target_df: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
     """Remplace les NaN résiduels (weekends hors historique) par des agrégats historiques.
 
@@ -755,8 +799,14 @@ def generate_features(
     days: int = 14,
     history=None,
     out_path=None,
+    planned_menus=None,
 ) -> pd.DataFrame:
-    """Génère les features live pour les dates cibles et les écrit dans features_live.csv."""
+    """Génère les features live pour les dates cibles et les écrit dans features_live.csv.
+
+    ``planned_menus`` est optionnel : DataFrame indexé par date avec colonnes
+    ``entrees``, ``plat_principal_1``, ``plat_principal_2``. À défaut, les menus
+    sont lus depuis ``planned_menus.csv`` (ou vides s'ils n'existent pas).
+    """
     if history is None:
         history = pd.read_csv(HISTORY_FILE, parse_dates=["Date"])
     history = history.sort_values("Date").reset_index(drop=True)
@@ -770,7 +820,9 @@ def generate_features(
 
     office_preds = roll_office_forward(history, target_dates)
 
-    work = _build_workspace(history, office_preds)
+    if planned_menus is None:
+        planned_menus = _load_planned_menus()
+    work = _build_workspace(history, office_preds, planned_menus)
     feats = build_features(work)
 
     feat_cols = _deployment_feature_cols()
