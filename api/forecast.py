@@ -213,7 +213,7 @@ def predict_today(
         "catboost": round(float(bw[2]), 4) if len(bw) > 2 else 0.0,
     }
 
-    notes = _build_notes(target_date, int(op_pred), ratio_pred)
+    notes = _build_notes(target_date, int(round(op_pred)), ratio_pred)
 
     result = {
         "date": target_date,
