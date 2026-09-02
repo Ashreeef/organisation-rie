@@ -23,6 +23,7 @@ Usage:
     ENABLE_AUTHENTICATION=true SECRET_KEY=your-secret-key uvicorn api.main:app --port 8000
 """
 import time
+import hashlib
 import logging
 from datetime import date, datetime
 from typing import Optional
@@ -43,7 +44,12 @@ from .models import (
     PlannedMealsUpdate,
     BilanSubmission,
 )
-from .forecast import predict_today, get_model_info
+from .forecast import (
+    predict_today,
+    get_model_info,
+    reset_features_cache,
+    stored_menu_fingerprint,
+)
 from .operations import get_today_entry, save_entry, get_all_entries
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
 
@@ -126,9 +132,38 @@ def _forecast_for_date(date_str: str, office_present: Optional[int] = None) -> T
             target_date=date_str,
             office_present=office_present,
         )
-        return _to_forecast_model(result)
+        model = _to_forecast_model(result)
+        model.forecast_stale = _is_forecast_stale(date_str)
+        model.menu_fingerprint = _current_menu_fingerprint(date_str)
+        return model
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
+
+
+def _current_menu_fingerprint(date_str: str) -> str:
+    """Empreinte du menu *actuellement* enregistré pour une date."""
+    menu = get_menu(date_str)
+    if menu is None:
+        return ""
+    fields = ("entrees", "plat_principal_1", "plat_principal_2",
+              "plat_principal_1_id", "plat_principal_2_id")
+    parts = [str(menu.get(c) or "").strip() for c in fields]
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _is_forecast_stale(date_str: str) -> bool:
+    """La prévision servie reflète-t-elle le menu actuel ?
+
+    Compare l'empreinte du menu enregistré à celle consignée dans la ligne de
+    features utilisée pour l'inférence. Si les features datent d'un menu
+    différent (régénération non effectuée / échouée), la prévision est périmée.
+    """
+    stored = stored_menu_fingerprint(date_str)
+    current = _current_menu_fingerprint(date_str)
+    if stored is None:
+        # Pas d'empreinte stockée : on ne peut pas affirmer la fraîcheur.
+        return False
+    return stored != current
 
 
 def _to_forecast_model(data: dict) -> TodayForecast:

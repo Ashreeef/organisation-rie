@@ -34,6 +34,7 @@ Notes de production:
     (elles peuvent varier d'un jour selon le croissant lunaire observé).
 """
 import argparse
+import hashlib
 import json
 import logging
 import pickle
@@ -994,6 +995,19 @@ def generate_features(
         )
 
     target_df["office_present_pred"] = target_df["office_present"]
+
+    # Empreinte du menu utilisé pour chaque date cible (fraîcheur prévision).
+    # Permet de détecter un menu modifié après génération des features.
+    pm_planned = None
+    if planned_menus is not None and len(planned_menus):
+        pm_planned = planned_menus.reset_index()
+        if "date" in pm_planned.columns:
+            pm_planned["date"] = pd.to_datetime(pm_planned["date"]).dt.normalize()
+    fp_by_date = {}
+    for _d in target_dates:
+        fp_by_date[_d.normalize()] = menu_fingerprint_from_frame(pm_planned, _d.normalize())
+    target_df["menu_fp"] = target_df["Date"].dt.normalize().map(fp_by_date).fillna("").astype(str)
+
     target_df = _fill_live_nans(target_df, history)
     target_df = target_df.reset_index(drop=True)
 
@@ -1003,6 +1017,113 @@ def generate_features(
     target_df = target_df.reset_index(drop=True).sort_values("Date")
     target_df.to_csv(out_path, index=False)
     return target_df
+
+
+# ---------------------------------------------------------------------------
+# 4b. Fraîcheur du menu & régénération ciblée
+# ---------------------------------------------------------------------------
+
+def menu_fingerprint_from_frame(planned_menus, d) -> str:
+    """Empreinte stable du menu planifié pour une date.
+
+    ``planned_menus`` : DataFrame (index date) OU None. Retourne '' si aucun
+    menu (les features décriraient alors un menu vide).
+    """
+    fields = ("entrees", "plat_principal_1", "plat_principal_2",
+              "plat_principal_1_id", "plat_principal_2_id")
+    if planned_menus is None or len(planned_menus) == 0:
+        return ""
+    try:
+        d = pd.Timestamp(d).normalize()
+    except Exception:
+        return ""
+    if "date" not in planned_menus.columns:
+        return ""
+    sub = planned_menus[pd.to_datetime(planned_menus["date"]).dt.normalize() == d]
+    if sub.empty:
+        return ""
+    row = sub.iloc[0]
+    parts = []
+    for c in fields:
+        v = row.get(c)
+        parts.append("" if v is None or pd.isna(v) else str(v).strip())
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def regenerate_features_for_date(date) -> bool:
+    """Re-calcule les features live d'une date cible et les fusionne dans
+    ``features_live.csv`` (les autres dates sont conservées).
+
+    Appelé à l'enregistrement d'un menu pour que la prévision reflète
+    immédiatement le nouveau menu. Retourne True en cas de succès.
+    """
+    import warnings
+    try:
+        date = pd.Timestamp(date).normalize()
+        history = pd.read_csv(HISTORY_FILE, parse_dates=["Date"])
+        key_dates = {date}
+
+        # Conserver la fenêtre existante (sinon on n'aurait que la date cible).
+        live_path = Path(OUT_FILE)
+        existing = None
+        if live_path.exists():
+            try:
+                existing = pd.read_csv(live_path, parse_dates=["Date"])
+            except Exception:
+                existing = None
+
+        # Régénère la ligne cible via le pipeline complet (menu actuel).
+        fresh = generate_features(
+            target_dates=[date],
+            history=history,
+            out_path=live_path,  # inutilisé : on fusionne nous-mêmes ensuite
+        )
+
+        known = set()
+        window = pd.DataFrame()
+        if existing is not None and not existing.empty and "Date" in existing:
+            window = existing.copy()
+            known = set(existing["Date"].dt.normalize())
+            window = window[~window["Date"].dt.normalize().isin([date])]
+
+        # Union colonnes (fresh peut avoir des colonnes absentes de l'existante)
+        if not fresh.empty:
+            fresh = fresh.reset_index(drop=True)
+            merged = pd.concat([window, fresh], axis=0, ignore_index=True) if not window.empty else fresh
+        else:
+            merged = window.reset_index(drop=True) if not window.empty else pd.DataFrame()
+
+        if merged.empty:
+            return False
+
+        # Aligner les colonnes sur l'existante + celles du fresh
+        if not window.empty:
+            all_cols = list(window.columns)
+            for c in merged.columns:
+                if c not in all_cols:
+                    all_cols.append(c)
+            merged = merged.reindex(columns=all_cols)
+        else:
+            all_cols = list(fresh.columns)
+
+        # clé : conserver les colonnes utiles au forecasting
+        keep = [c for c in all_cols if c in merged.columns]
+
+        merged = merged[keep].reset_index(drop=True).sort_values("Date")
+
+        # Backfill menu_fp sur TOUTES les dates à partir du menu actuel, pour ne
+        # pas marquer faussement "périmée" une prévision dont le menu n'a pas changé.
+        pm = _load_planned_menus()
+        pm_arr = pm.reset_index() if (pm is not None and len(pm)) else None
+        merged["menu_fp"] = merged["Date"].dt.normalize().map(
+            lambda d: menu_fingerprint_from_frame(pm_arr, d)
+        ).fillna("").astype(str)
+
+        merged.to_csv(live_path, index=False)
+        return True
+    except Exception as exc:  # pragma: no cover
+        logger.error("regenerate_features_for_date(%s) échoué: %s", date, exc)
+        return False
 
 
 # ---------------------------------------------------------------------------

@@ -7,9 +7,12 @@ Format : date,entrees,plat_principal_1,plat_principal_2
 C'est le fichier consumé par src/forecasting/daily_features.py pour
 reconstruire les features des jours cibles à partir des vrais menus.
 """
+import logging
 import pandas as pd
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
 MENUS_FILE = DATA_DIR / "planned_menus.csv"
@@ -91,6 +94,7 @@ def upsert_menu(entry: dict) -> dict:
     df = df.drop_duplicates(subset="date", keep="last")
     df = df.sort_values("date")
     df.to_csv(MENUS_FILE, index=False)
+    _trigger_feature_regen(date)
     return clean
 
 
@@ -105,4 +109,31 @@ def delete_menu(date: str) -> bool:
     df = df[df["date"] != pd.Timestamp(date).date().isoformat()]
     removed = before - len(df)
     df.to_csv(MENUS_FILE, index=False)
+    if removed > 0:
+        _trigger_feature_regen(date)
     return removed > 0
+
+
+def _trigger_feature_regen(date: str) -> None:
+    """Re-calcule les features live de la date modifiée pour que la prévision
+    reflète le nouveau menu (source de vérité unique : menu → features → modèle).
+
+    Ne doit JAMAIS faire échouer l'enregistrement du menu : tout échec est
+    journalisé et l'API continue (un menu enregistré vaut mieux qu'un échec 500).
+    """
+    try:
+        from src.forecasting.daily_features import regenerate_features_for_date
+        import sys
+        from pathlib import Path as _P
+        if str(_P(__file__).resolve().parent.parent) not in sys.path:
+            sys.path.insert(0, str(_P(__file__).resolve().parent.parent))
+        ok = regenerate_features_for_date(date)
+        if ok:
+            try:
+                from api.forecast import reset_features_cache
+                reset_features_cache()
+            except Exception:
+                pass
+        logger.info("Régénération features menu %s : %s", date, "OK" if ok else "ÉCHEC")
+    except Exception as exc:  # pragma: no cover — robustesse, ne bloque pas le save
+        logger.error("_trigger_feature_regen(%s) échoué: %s", date, exc)

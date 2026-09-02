@@ -33,6 +33,11 @@ export interface ForecastResult {
   confidenceUpper: number;
   confidenceLevel: ConfidenceLevel;
   recommendationNote: string;
+  // True when the forecast shown may not reflect the menu currently planned
+  // (features not yet regenerated for the date). UI must show "à actualiser".
+  forecastStale?: boolean;
+  // Fingerprint of the menu used to compute this forecast.
+  menuFingerprint?: string;
 }
 
 // A forecast that could not be produced (e.g. no planned menu for the date).
@@ -49,6 +54,8 @@ export const noForecast = (date: string, reason?: string | null): ForecastResult
   confidenceUpper: 0,
   confidenceLevel: 'low',
   recommendationNote: '',
+  forecastStale: false,
+  menuFingerprint: '',
 });
 
 export interface ForecastVsActualPoint {

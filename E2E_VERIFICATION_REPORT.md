@@ -18,7 +18,7 @@ exécuté, suite de tests lancée) :
 - ✅ Backend FastAPI opérationnel avec ensemble de 36 modèles (majorité XGBoost)
 - ✅ Frontend Next.js : **build de production réussi** (après correction d'une erreur de tri nul)
 - ✅ `tsc --noEmit` : **zéro erreur** ; `next lint` : **zéro avertissement** (8 erreurs corrigées)
-- ✅ Suite de tests : **128/128** (100 %)
+- ✅ Suite de tests : **131/131** (100 %)
 - ✅ Source de vérité unique : `data/operational/*.json` via `/api/operations`
 - ✅ Toutes les routes frontend répondent HTTP 200 ; les routes supprimées renvoient 404
 
@@ -28,19 +28,19 @@ exécuté, suite de tests lancée) :
 
 ## 1. Suite de tests (backend)
 
-### Résultats : 128/128 PASSÉS ✅
+### Résultats : 131/131 PASSÉS ✅
 
 ```
 tests/…                                    Résultat   Détail
 tests/test_api.py                          ✅ 16/16    Calendar, health, intégration données réelles
-tests/test_daily_features.py               ✅ 11/11    Transformeurs texte (résolu)
+tests/test_daily_features.py               ✅ 23/23    Transformeurs texte + fraîcheur menu (régénération)
 tests/test_feature_engineering.py          ✅ 11/11    157 features
 tests/test_forecasting.py                  ✅ 18/18    Coût asymétrique, blending
 tests/test_menu_cleaning.py                ✅ 22/22    NLP menus algériens
 tests/test_optimizer.py                    ✅ 9/9      Scoring menu
 tests/test_planner.py                      ✅ 9/9      Approvisionnement
 tests/test_waste_tracking.py               ✅ 12/12    Analytics gaspillage
-                              (autres modules)  → total 128 ✅
+                              (autres modules)  → total 131 ✅
 ```
 
 > Commandes : `python -m pytest -q` (temps : ~28 s, aucune erreur)
@@ -65,6 +65,49 @@ de version **scikit-learn** :
 - **Vérification** : les 2 tests ciblés passent, puis **128/128** au complet (28 s).
 - **Impact** : aucun sur les endpoints de production (36 modèles toujours chargés,
   prévisions inchangées — vérifiées en direct).
+
+---
+
+## 1bis. Bug critique corrigé : « changer un menu ne change pas la prévision »
+
+### Symptôme
+
+Modifier le menu d'une journée dans `/menus-planner` n'**impactait pas** la prévision
+affichée sur `/dashboard`.
+
+### Cause racine
+
+Le modèle utilise 47 features liées au menu (parmi les 157 `feat_cols`), mais l'inférence
+lisait ces features depuis un fichier **statique pré-généré** `data/processed/features_live.csv`,
+régénéré **uniquement** par la tâche quotidienne (`scripts/run_daily_features.py`). Il
+n'existait **aucun lien** entre l'enregistrement d'un menu et la régénération des features.
+
+Preuve par comparaison (09-03, espadon en sauce / riz pilaf) : `menu_poisson` statique=0 vs
+menu réel=1, `menu_frite` statique=1 vs réel=0, `menu_is_light` statique=1 vs réel=0, etc.
+
+### Correctif (source de vérité unique : menu → features → modèle)
+
+1. **Régénération à l'enregistrement** : `api/menus.py` appelle désormais
+   `regenerate_features_for_date(date)` après chaque `upsert/delete_menu`. Cette fonction
+   re-cale la ligne de features de la date dans `features_live.csv` via le pipeline complet
+   (`src/forecasting/daily_features.py`) et **invalide le cache in-process** du forecasting
+   (`reset_features_cache`) — la prochaine prévision lit donc les features du nouveau menu.
+   Toute erreur est journalisée sans jamais faire échouer l'enregistrement du menu.
+2. **Drapeau de fraîcheur** : `features_live.csv` porte désormais une colonne `menu_fp`
+   (empreinte md5 du menu). À la prévision, `api/main.py` compare l'empreinte du menu actuel
+   à celle consignée dans la ligne de features et renvoie `forecast_stale` +
+   `menu_fingerprint` dans la réponse (`TodayForecast`).
+3. **Affichage UI** : le carte « Demain » du dashboard affiche un bandeau
+   **« Prévision à actualiser »** quand `forecastStale` est vrai (sécurité si la régénération
+   a échoué ou si le menu a été modifié hors API).
+
+### Vérification (fonctionnelle)
+
+- Espadon en sauce → features `menu_poisson=1` ; changement en couscous → `menu_poulet=1`,
+  prévision recalculée, `forecast_stale=false`.
+- Scénario « périmé » simulé (empreinte différente) → `forecast_stale=true`.
+- `features_live.csv` conserve ses 14 dates, colonne `menu_fp` backfillée partout.
+- Suite backend **131/131** ; `tsc` zéro erreur ; `next lint` propre ; **build prod réussi**.
 
 ---
 

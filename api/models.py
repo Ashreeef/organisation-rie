@@ -23,6 +23,8 @@ class TodayForecast(BaseModel):
     confidence_upper: int = 0
     confidence_level: str = "low"
     recommendation_note: str = ""
+    forecast_stale: bool = False
+    menu_fingerprint: str = ""
 
 
 class TodayForecastRequest(BaseModel):

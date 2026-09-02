@@ -25,6 +25,7 @@ import {
   PlayCircle,
   StopCircle,
   ClipboardCheck,
+  RefreshCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -99,8 +100,14 @@ export default function DashboardPage() {
     setChartData(chart);
     // Persiste la prévision du jour dans son dossier opérationnel pour que
     // /history reflète la prévision vs le réel une fois la journée clôturée.
+    // Best-effort : une indisponibilité transitoire du backend ne doit pas
+    // casser l'affichage du tableau de bord (persisté au prochain refresh).
     if (f.forecastAvailable) {
-      await api.persistForecast({ ...f, date: todayDate });
+      try {
+        await api.persistForecast({ ...f, date: todayDate });
+      } catch {
+        // Non bloquant : la prévision reste affichée sans être persistée.
+      }
     }
     setLoading(false);
   }, []);
@@ -369,6 +376,18 @@ export default function DashboardPage() {
             />
             {tomorrowForecast?.forecastAvailable ? (
               <>
+                {tomorrowForecast?.forecastStale ? (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-3 text-sm">
+                    <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div>
+                      <p className="font-semibold text-amber-800">Prévision à actualiser</p>
+                      <p className="text-muted-foreground">
+                        Le menu de demain a changé depuis la dernière prévision. Recalculez les features
+                        pour actualiser cette prévision.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-4 grid grid-cols-3 gap-4 text-center">
                   <div>
                     <p className="text-xs text-muted-foreground">Employés au bureau</p>

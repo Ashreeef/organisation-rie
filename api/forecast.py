@@ -73,6 +73,35 @@ def _load_features_cache():
     return _features_cache
 
 
+def reset_features_cache() -> None:
+    """Invalidate la mémoïsation in-process des features.
+
+    À appeler après avoir régénéré ``features_live.csv`` (ex. changement de
+    menu) pour que la prochaine prévision lise les nouvelles features.
+    """
+    global _features_cache
+    _features_cache = None
+
+
+def stored_menu_fingerprint(date) -> Optional[str]:
+    """Empreinte du menu enregistrée dans la ligne de features d'une date.
+
+    Retourne None si aucune ligne / aucune colonne ``menu_fp`` n'est dispo.
+    """
+    try:
+        d = pd.Timestamp(date).normalize()
+        features_df = _load_features_cache()
+        if features_df is None or "menu_fp" not in features_df.columns:
+            return None
+        match = features_df[features_df["Date"].dt.normalize() == d]
+        if match.empty:
+            return None
+        v = match.iloc[0].get("menu_fp")
+        return ("" if pd.isna(v) else str(v).strip())
+    except Exception:
+        return None
+
+
 def _build_fallback_deployment():
     """Minimal fallback when no deployment bundle exists."""
     return {

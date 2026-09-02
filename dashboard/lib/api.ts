@@ -187,6 +187,7 @@ function mapBackendForecast(data: {
   employees_count: number; recommended_meals: number;
   confidence_lower: number; confidence_upper: number;
   confidence_level: string; recommendation_note: string;
+  forecast_stale?: boolean; menu_fingerprint?: string;
   blend_scores: { lgb: number; xgb: number; catboost: number };
 }): ForecastResult {
   return {
@@ -202,6 +203,8 @@ function mapBackendForecast(data: {
     confidenceUpper: data.confidence_upper,
     confidenceLevel: data.confidence_level as 'high' | 'medium' | 'low',
     recommendationNote: data.recommendation_note,
+    forecastStale: data.forecast_stale ?? false,
+    menuFingerprint: data.menu_fingerprint ?? '',
   };
 }
 
@@ -218,6 +221,8 @@ const fallbackForecast = (dateStr: string): ForecastResult => ({
   confidenceUpper: 335,
   confidenceLevel: 'medium',
   recommendationNote: 'Mode dégradé — backend indisponible',
+  forecastStale: false,
+  menuFingerprint: '',
 });
 
 /* -------------------------------------------------------------------------- */
@@ -242,6 +247,7 @@ export const api = {
         employees_count: number; recommended_meals: number;
         confidence_lower: number; confidence_upper: number;
         confidence_level: string; recommendation_note: string;
+        forecast_stale?: boolean; menu_fingerprint?: string;
         blend_scores: { lgb: number; xgb: number; catboost: number };
       }>('/api/forecast/today');
       return mapBackendForecast(data);
@@ -263,6 +269,7 @@ export const api = {
         employees_count: number; recommended_meals: number;
         confidence_lower: number; confidence_upper: number;
         confidence_level: string; recommendation_note: string;
+        forecast_stale?: boolean; menu_fingerprint?: string;
         blend_scores: { lgb: number; xgb: number; catboost: number };
       }>('/api/forecast', { date: dateStr });
       return mapBackendForecast(data);

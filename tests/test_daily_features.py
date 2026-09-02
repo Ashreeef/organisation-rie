@@ -26,6 +26,8 @@ from src.forecasting.daily_features import (  # noqa: E402
     _wmo_to_conditions,
     build_features,
     generate_features,
+    menu_fingerprint_from_frame,
+    regenerate_features_for_date,
     roll_office_forward,
     HISTORY_FILE,
 )
@@ -261,8 +263,9 @@ class TestTextFeatureConsistency:
             out_path=tmp_path / "live.csv",
         )
         assert len(out) == 1
-        assert set(out.columns) == set(["Date", "office_present", "office_present_pred"]) | set(dep_cols)
-        assert out.drop(columns=["Date"]).isna().sum().sum() == 0
+        expect = {"Date", "office_present", "office_present_pred", "menu_fp"} | set(dep_cols)
+        assert set(out.columns) == expect
+        assert out.drop(columns=["Date", "menu_fp"]).isna().sum().sum() == 0
         assert out["office_present_pred"].iloc[0] == pytest.approx(out["office_present"].iloc[0])
         assert (Path(tmp_path) / "live.csv").exists()
 
@@ -285,3 +288,105 @@ class TestTextFeatureConsistency:
         live_date = live["Date"].iloc[0]
         assert (merged["Date"] == live_date).sum() == 1
         assert merged.shape[0] == len(live) + len(train)
+
+
+class TestMenuFreshness:
+    """La prévision doit refléter le menu planifié : régénération ciblée des
+    features + empreinte pour la détection de prévision périmée."""
+
+    def test_menu_fingerprint_empty_when_no_menu(self):
+        assert menu_fingerprint_from_frame(None, "2026-09-03") == ""
+        empty = pd.DataFrame(columns=["date", "entrees", "plat_principal_1",
+                                      "plat_principal_2"])
+        assert menu_fingerprint_from_frame(empty, "2026-09-03") == ""
+
+    def test_menu_fingerprint_stable_and_distinct(self):
+        pm = pd.DataFrame([
+            {"date": pd.to_datetime("2026-09-03"), "entrees": "Salade",
+             "plat_principal_1": "Espadon en sauce", "plat_principal_2": "Riz pilaf",
+             "plat_principal_1_id": "espadon", "plat_principal_2_id": "riz-pilaf"},
+            {"date": pd.to_datetime("2026-09-04"), "entrees": "",
+             "plat_principal_1": "Couscous au poulet", "plat_principal_2": "Frite",
+             "plat_principal_1_id": "couscous", "plat_principal_2_id": "frite"},
+        ])
+        fp_sep3 = menu_fingerprint_from_frame(pm, "2026-09-03")
+        assert fp_sep3 != ""
+        # stable pour un même menu
+        assert menu_fingerprint_from_frame(pm, "2026-09-03") == fp_sep3
+        # différent suivant le menu
+        assert menu_fingerprint_from_frame(pm, "2026-09-04") != fp_sep3
+        # pas de menu ce jour-là
+        assert menu_fingerprint_from_frame(pm, "2026-01-01") == ""
+
+    def test_regenerate_recomputes_changed_date_and_backfills_fp(self, tmp_path, history):
+        import api.forecast as fc
+        from api.menus import MENUS_FILE
+
+        # sauvegarde l'état d'origine et les features live
+        orig_menus = MENUS_FILE.read_bytes() if MENUS_FILE.exists() else None
+        live_path = ROOT / "data" / "processed" / "features_live.csv"
+        orig_live = live_path.read_bytes() if live_path.exists() else None
+
+        try:
+            pd.DataFrame([
+                {"date": "2026-09-03", "entrees": "Salade",
+                 "plat_principal_1": "Espadon en sauce", "plat_principal_2": "Riz pilaf",
+                 "plat_principal_1_id": "espadon", "plat_principal_2_id": "riz-pilaf"},
+                {"date": "2026-09-04", "entrees": "",
+                 "plat_principal_1": "Couscous au poulet", "plat_principal_2": "Frite",
+                 "plat_principal_1_id": "couscous", "plat_principal_2_id": "frite"},
+            ]).to_csv(MENUS_FILE, index=False)
+
+            # génère une ligne live de référence pour 09-03 et 09-04
+            generate_features(
+                target_dates=[pd.Timestamp("2026-09-03"), pd.Timestamp("2026-09-04")],
+                history=history,
+                out_path=live_path,
+            )
+            before = pd.read_csv(live_path, parse_dates=["Date"])
+            assert "menu_fp" in before.columns
+
+            # le menu du 03 est un plat de POISSON
+            row_before = before[before["Date"].dt.normalize() == pd.Timestamp("2026-09-03")]
+            assert row_before["menu_poisson"].iloc[0] == 1
+            fp_before = row_before["menu_fp"].iloc[0]
+
+            # on change le menu du 03 en menu frit/boeuf, puis on régénère
+            pd.DataFrame([
+                {"date": "2026-09-03", "entrees": "",
+                 "plat_principal_1": "Sandwich frite", "plat_principal_2": "Boeuf bourguignon",
+                 "plat_principal_1_id": "sandwich-frite", "plat_principal_2_id": "boeuf"},
+                {"date": "2026-09-04", "entrees": "",
+                 "plat_principal_1": "Couscous au poulet", "plat_principal_2": "Frite",
+                 "plat_principal_1_id": "couscous", "plat_principal_2_id": "frite"},
+            ]).to_csv(MENUS_FILE, index=False)
+
+            ok = regenerate_features_for_date("2026-09-03")
+            assert ok
+
+            after = pd.read_csv(live_path, parse_dates=["Date"])
+            # le fichier conserve plusieurs dates, pas seulement la cible
+            assert len(after) >= 2
+            assert "menu_fp" in after.columns
+            # plus de NaN sur menu_fp (backfill global)
+            assert after["menu_fp"].notna().all()
+
+            row_after = after[after["Date"].dt.normalize() == pd.Timestamp("2026-09-03")]
+            # le menu frit a remplacé le poisson
+            assert row_after["menu_poisson"].iloc[0] == 0
+            assert row_after["menu_frite"].iloc[0] == 1
+            # l'empreinte a changé avec le menu
+            assert row_after["menu_fp"].iloc[0] != fp_before
+
+            # le cache in-process du forecasting est invalidé par la régénération
+            fc.reset_features_cache()
+            stored = fc.stored_menu_fingerprint("2026-09-03")
+            assert stored == row_after["menu_fp"].iloc[0]
+        finally:
+            if orig_live is not None:
+                live_path.write_bytes(orig_live)
+            if orig_menus is not None:
+                MENUS_FILE.write_bytes(orig_menus)
+            else:
+                MENUS_FILE.unlink(missing_ok=True)
+            fc.reset_features_cache()
