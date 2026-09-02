@@ -15,6 +15,10 @@ export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
 export interface ForecastResult {
   date: string;
+  // Whether a valid forecast exists for this date (a menu must be planned).
+  forecastAvailable: boolean;
+  // Human-readable reason when forecastAvailable is false.
+  unavailableReason?: string | null;
   // Stage 1: sub-model prediction
   officePresent: number;
   // Stage 2: main model prediction (pre-calibration ratio)
@@ -30,6 +34,22 @@ export interface ForecastResult {
   confidenceLevel: ConfidenceLevel;
   recommendationNote: string;
 }
+
+// A forecast that could not be produced (e.g. no planned menu for the date).
+export const noForecast = (date: string, reason?: string | null): ForecastResult => ({
+  date,
+  forecastAvailable: false,
+  unavailableReason: reason ?? null,
+  officePresent: 0,
+  predictedRatio: 0,
+  employeesCount: 0,
+  blendScores: { lgb: 0, xgb: 0, catboost: 0 },
+  recommendedMeals: 0,
+  confidenceLower: 0,
+  confidenceUpper: 0,
+  confidenceLevel: 'low',
+  recommendationNote: '',
+});
 
 export interface PlanningInputs {
   expectedPresence: number;

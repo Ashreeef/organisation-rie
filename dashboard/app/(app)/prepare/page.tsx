@@ -109,6 +109,36 @@ export default function PreparePage() {
     weekday: 'long', day: 'numeric', month: 'long',
   });
 
+  // No menu for tomorrow → no forecast → no preparation is possible.
+  if (!forecast.forecastAvailable) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Préparer demain — {tomorrowLabel}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Suivez les étapes pour préparer le service de demain.
+          </p>
+        </div>
+        <Card className="flex flex-col items-center justify-center p-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+            <UtensilsCrossed className="h-8 w-8 text-amber-600" />
+          </div>
+          <p className="mt-4 text-lg font-semibold text-foreground">Menu de demain non renseigné</p>
+          <p className="mt-2 max-w-md text-sm text-muted-foreground">
+            Aucune prévision ne peut être générée tant que le menu de demain n’est pas planifié.
+            Renseignez d’abord le menu pour obtenir une prévision des repas.
+          </p>
+          <Link href="/menus-planner">
+            <Button className="mt-6">
+              Planifier le menu de demain
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
   const selectedMenu = menus.find((m) => m.id === selectedMenuId);
 
   const handleOverrideConfirm = () => {

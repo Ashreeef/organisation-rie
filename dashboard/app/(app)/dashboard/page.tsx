@@ -49,6 +49,7 @@ const statusUI: Record<ServiceStatus, { label: string; color: string; bg: string
 
 export default function DashboardPage() {
   const [forecast, setForecast] = React.useState<ForecastResult | null>(null);
+  const [tomorrowForecast, setTomorrowForecast] = React.useState<ForecastResult | null>(null);
   const [today, setToday] = React.useState<TodayState | null>(null);
   const [chartData, setChartData] = React.useState<ForecastVsActualPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -66,6 +67,11 @@ export default function DashboardPage() {
     setPrepared(todayState.bilan?.prepared?.toString() ?? '');
     setServed(todayState.bilan?.served?.toString() ?? '');
     setComment(todayState.bilan?.comment ?? '');
+
+    // Tomorrow's forecast is always fetched for the explicit tomorrow date.
+    // It carries its own forecastAvailable flag (backend gate: menu required).
+    const tomorrow = await api.getTomorrowForecast();
+    setTomorrowForecast(tomorrow);
 
     try {
       const plan = await api.getPlannedMenu(todayDate);
@@ -145,6 +151,12 @@ export default function DashboardPage() {
   const wasteRate = preparedNum > 0 ? (remaining / preparedNum) * 100 : 0;
 
   const todayLabel = new Date().toLocaleDateString('fr-FR', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowLabel = tomorrowDate.toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 
@@ -339,47 +351,75 @@ export default function DashboardPage() {
       {/* ── STATE: Day closed ──────────────────────────────── */}
       {status === 'cloturee' && (
         <>
-          <Card className="border-success/30 bg-success/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-success/10">
-                <CheckCircle2 className="h-8 w-8 text-success" />
-              </div>
-              <div>
-                <p className="text-xl font-bold text-success">Journée clôturée</p>
-                {today.bilan && (
-                  <p className="mt-1 text-sm text-muted-foreground">
+          {/* Bilan summary only — the status banner above already carries the
+              "Journée clôturée" title + date, so no duplicate here. */}
+          {today.bilan && (
+            <Card className="border-success/30 bg-success/5 p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-success/10">
+                  <CheckCircle2 className="h-8 w-8 text-success" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Résultat de la journée</p>
+                  <p className="mt-1 text-lg font-semibold text-foreground">
                     {formatNumber(today.bilan.prepared)} préparés · {formatNumber(today.bilan.served)} servis · {formatNumber(today.bilan.remaining)} restants · {formatPercent(today.bilan.wasteRate)} gaspillage
                   </p>
-                )}
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
 
-          {/* Tomorrow preview (unlocked) */}
+          {/* Tomorrow preview (unlocked) — always for the explicit tomorrow date.
+              Shows the forecast only if a menu is planned for tomorrow. */}
           <Card className="p-6">
-            <SectionHeader title="Demain" description="Prévision pour demain" />
-            <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-xs text-muted-foreground">Employés au bureau</p>
-                <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
+            <SectionHeader
+              title="Demain"
+              description={`${tomorrowLabel}${tomorrowForecast?.forecastAvailable ? ' — prévision disponible' : ''}`}
+            />
+            {tomorrowForecast?.forecastAvailable ? (
+              <>
+                <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Employés au bureau</p>
+                    <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(tomorrowForecast.officePresent)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-primary">Repas recommandés</p>
+                    <p className="mt-1 text-3xl font-bold text-primary">{formatNumber(tomorrowForecast.recommendedMeals)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Taux participation</p>
+                    <p className="mt-1 text-2xl font-bold text-foreground">
+                      {(tomorrowForecast.predictedRatio * 100).toFixed(1).replace('.', ',')}%
+                    </p>
+                  </div>
+                </div>
+                <Link href="/prepare">
+                  <Button className="mt-4 w-full">
+                    Préparer demain
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <div className="mt-4">
+                <div className="flex items-start gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-4">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  <div>
+                    <p className="font-semibold text-foreground">Prévision indisponible</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Veuillez d’abord renseigner le menu de demain pour obtenir une prévision.
+                    </p>
+                  </div>
+                </div>
+                <Link href="/menus-planner">
+                  <Button className="mt-4 w-full" variant="outline">
+                    Planifier le menu de demain
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
               </div>
-              <div>
-                <p className="text-xs text-primary">Repas recommandés</p>
-                <p className="mt-1 text-3xl font-bold text-primary">{formatNumber(forecast.recommendedMeals)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Taux participation</p>
-                <p className="mt-1 text-2xl font-bold text-foreground">
-                  {(forecast.predictedRatio * 100).toFixed(1).replace('.', ',')}%
-                </p>
-              </div>
-            </div>
-            <Link href="/prepare">
-              <Button className="mt-4 w-full">
-                Préparer demain
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
+            )}
           </Card>
         </>
       )}

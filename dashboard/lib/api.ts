@@ -28,6 +28,7 @@ import type {
   TodayState,
   TomorrowState,
 } from '@/lib/types';
+import { noForecast } from '@/lib/types';
 import { DISHES, DISH_CATEGORIES } from '@/lib/menu-catalog';
 
 /* -------------------------------------------------------------------------- */
@@ -266,7 +267,8 @@ async function fetchTodayState(): Promise<TodayState> {
 /* -------------------------------------------------------------------------- */
 
 function mapBackendForecast(data: {
-  date: string; office_present: number; predicted_ratio: number;
+  date: string; forecast_available?: boolean; unavailable_reason?: string | null;
+  office_present: number; predicted_ratio: number;
   employees_count: number; recommended_meals: number;
   confidence_lower: number; confidence_upper: number;
   confidence_level: string; recommendation_note: string;
@@ -274,6 +276,8 @@ function mapBackendForecast(data: {
 }): ForecastResult {
   return {
     date: data.date,
+    forecastAvailable: data.forecast_available ?? true,
+    unavailableReason: data.unavailable_reason ?? null,
     officePresent: data.office_present,
     predictedRatio: data.predicted_ratio,
     employeesCount: data.employees_count,
@@ -288,6 +292,8 @@ function mapBackendForecast(data: {
 
 const fallbackForecast = (dateStr: string): ForecastResult => ({
   date: dateStr,
+  forecastAvailable: true,
+  unavailableReason: null,
   officePresent: 312,
   predictedRatio: 0.62,
   employeesCount: 310,
@@ -316,7 +322,8 @@ export const api = {
   async getTodayForecast(): Promise<ForecastResult> {
     try {
       const data = await apiGet<{
-        date: string; office_present: number; predicted_ratio: number;
+        date: string; forecast_available?: boolean; unavailable_reason?: string | null;
+        office_present: number; predicted_ratio: number;
         employees_count: number; recommended_meals: number;
         confidence_lower: number; confidence_upper: number;
         confidence_level: string; recommendation_note: string;
@@ -329,12 +336,15 @@ export const api = {
   },
 
   async getTomorrowForecast(): Promise<ForecastResult> {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toISOString().slice(0, 10);
+    // The forecast is ALWAYS fetched for a specific, explicit date. There is
+    // deliberately no fallback that reuses today's numbers: if the backend
+    // reports forecast_available=false (no menu for tomorrow), we surface that
+    // exact state rather than inventing a forecast.
+    const dateStr = tomorrowKey();
     try {
       const data = await apiPost<{
-        date: string; office_present: number; predicted_ratio: number;
+        date: string; forecast_available?: boolean; unavailable_reason?: string | null;
+        office_present: number; predicted_ratio: number;
         employees_count: number; recommended_meals: number;
         confidence_lower: number; confidence_upper: number;
         confidence_level: string; recommendation_note: string;
@@ -342,8 +352,9 @@ export const api = {
       }>('/api/forecast', { date: dateStr });
       return mapBackendForecast(data);
     } catch {
-      const today = await api.getTodayForecast();
-      return { ...today, date: dateStr };
+      // Backend unreachable: report that no forecast can be determined, without
+      // borrowing another date's numbers.
+      return noForecast(dateStr, 'Backend indisponible — prévision temporairement inaccessible.');
     }
   },
 
@@ -416,15 +427,15 @@ export const api = {
     return {
       locked: today.status !== 'cloturee',
       forecast: f,
-      plannedMeals: f.recommendedMeals,
-      presenceInput: f.officePresent,
+      plannedMeals: f.forecastAvailable ? f.recommendedMeals : 0,
+      presenceInput: f.forecastAvailable ? f.officePresent : 0,
     };
   },
 
   async getPlanningInputs(): Promise<PlanningInputs> {
     const f = await this.getTomorrowForecast();
     return {
-      expectedPresence: f.officePresent,
+      expectedPresence: f.forecastAvailable ? f.officePresent : 0,
       selectedMenuId: catalogMenuItems()[0]?.id ?? '',
     };
   },
@@ -564,8 +575,8 @@ export const api = {
 
       return {
         version: `v${data.version}`,
-        lastTrainingDate: new Date().toISOString().slice(0, 10),
-        lastPredictionDate: new Date().toISOString().slice(0, 10),
+        lastTrainingDate: todayKey(),
+        lastPredictionDate: todayKey(),
         evaluationMetric: 'AsymmetricCost',
         predictionError: `${data.oof_metrics['Asym. Cost'].toFixed(1)} repas`,
         dataFreshness: 'En ligne',
@@ -627,7 +638,7 @@ export const api = {
           id: 'forecast-model',
           name: `Modèle de prévision ${metrics.version}`,
           status: 'synced',
-          lastSync: new Date().toISOString().slice(0, 10),
+          lastSync: todayKey(),
           records: metrics.catboostCount + metrics.lgbCount + metrics.xgbCount,
           freshness: 'fresh',
           availability: 100,

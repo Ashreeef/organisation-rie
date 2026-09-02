@@ -48,7 +48,13 @@ export default function HistoryPage() {
 
   React.useEffect(() => {
     api.getForecastHistory().then((h) => {
-      setHistory(h);
+      // La page est étiquetée "30j" : on borne explicitement la fenêtre aux
+      // 30 derniers jours calendaires (jamais implicite : date de début calculée
+      // et comparée au champ date de chaque entrée).
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 29);
+      const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+      setHistory(h.filter((e) => e.date >= cutoffKey));
       setLoading(false);
     });
   }, []);
