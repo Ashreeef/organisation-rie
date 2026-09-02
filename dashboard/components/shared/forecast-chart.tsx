@@ -37,7 +37,7 @@ function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
           />
           <span className="text-muted-foreground">{entry.name} :</span>
           <span className="font-medium text-foreground">
-            {entry.value ?? '—'}
+            {entry.value != null ? `${entry.value} repas` : '—'}
           </span>
         </div>
       ))}
@@ -70,12 +70,22 @@ export function ForecastChart({ data }: ForecastChartProps) {
         <ReferenceLine y={0} stroke="transparent" />
         <Line
           type="monotone"
+          dataKey="prepared"
+          name="Préparés"
+          stroke="hsl(var(--chart-4))"
+          strokeWidth={2}
+          dot={{ r: 2 }}
+          activeDot={{ r: 5 }}
+          connectNulls
+        />
+        <Line
+          type="monotone"
           dataKey="forecast"
           name="Prévision"
           stroke="hsl(var(--chart-2))"
           strokeWidth={2}
           strokeDasharray="5 4"
-          dot={false}
+          dot={{ r: 3 }}
           activeDot={{ r: 5 }}
         />
         <Line

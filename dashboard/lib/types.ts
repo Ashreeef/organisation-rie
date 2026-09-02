@@ -69,8 +69,9 @@ export interface KPI {
 export interface ForecastVsActualPoint {
   date: string;
   shortDate: string;
-  forecast: number;
+  forecast: number | null;
   actual: number | null;
+  prepared: number | null;
 }
 
 export type AlertSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -120,8 +121,9 @@ export interface ForecastHistoryEntry {
   employeesCount: number;
   forecast: number;
   actual: number;
-  ecart: number;
-  errorPct: number;
+  ecart: number | null;
+  errorPct: number | null;
+  hasForecast: boolean;
   status: 'bon' | 'acceptable' | 'mauvais';
 }
 

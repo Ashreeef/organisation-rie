@@ -98,6 +98,11 @@ export default function DashboardPage() {
     ]);
     setForecast(f);
     setChartData(chart);
+    // Persiste la prévision du jour dans son dossier opérationnel pour que
+    // /history reflète la prévision vs le réel une fois la journée clôturée.
+    if (f.forecastAvailable) {
+      await api.persistForecast({ ...f, date: todayDate });
+    }
     setLoading(false);
   }, []);
 
@@ -426,7 +431,7 @@ export default function DashboardPage() {
 
       {/* ── Chart (always visible) ─────────────────────────── */}
       <Card className="p-6">
-        <SectionHeader title="Prévisions vs consommation réelle" description="14 derniers jours ouvrés" />
+        <SectionHeader title="Prévisions vs consommation réelle" description="Prévision / préparés / consommation réelle — 14 derniers jours ouvrés" />
         <div className="mt-4">
           <ForecastChart data={chartData} />
         </div>

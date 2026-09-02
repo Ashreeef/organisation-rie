@@ -5,8 +5,8 @@
  *
  * Data source hierarchy (backend single source of truth, mock eliminated):
  *   - Forecast / model metrics / planned menus → FastAPI backend
- *   - Daily operations / service lifecycle → FastAPI backend (/api/operations)
- *   - Charts & history → CSV files (train.csv, submission.csv, test.csv)
+ *   - Daily operations / lifecycle / history / waste / charts → FastAPI backend
+ *     (/api/operations — data/operational/*.json)
  *   - Dishes & categories → shared catalog (menu-catalog.ts, menu-catalog.json)
  */
 
@@ -41,6 +41,21 @@ function delay<T>(data: T, ms = 200): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), ms));
 }
 
+interface DailyRecord {
+  date: string;
+  status?: string;
+  prepared?: number;
+  served?: number;
+  remaining?: number;
+  waste?: number;
+  waste_rate?: number;
+  planned_meals?: number;
+  presence?: number;
+  forecast?: number;
+  menu?: { categoryId?: string; dishId?: string; name?: string }[];
+  menuLabel?: string;
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
@@ -58,101 +73,25 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  CSV loading (for chart/history data)                                       */
+/*  Date formatting helpers                                                    */
 /* -------------------------------------------------------------------------- */
-
-type SubmissionRow = { date: string; predictedMeals: number };
-type ForecastPoint = { date: string; predictedMeals: number; expectedPresence: number };
-type ForecastBundle = {
-  points: ForecastPoint[];
-  actualByDate: Map<string, number>;
-};
-
-let forecastBundlePromise: Promise<ForecastBundle> | null = null;
 
 function formatShortDate(iso: string): string {
   const d = new Date(iso);
   return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { current += '"'; i += 1; }
-      else { inQuotes = !inQuotes; }
-      continue;
-    }
-    if (ch === ',' && !inQuotes) { out.push(current); current = ''; continue; }
-    current += ch;
-  }
-  out.push(current);
-  return out;
+// Arrondit à une décimale (ex. 4.69 → 4.7).
+function roundToOne(n: number): number {
+  return Math.round(n * 10) / 10;
 }
 
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
-  if (lines.length === 0) return [];
-  const header = parseCsvLine(lines[0]);
-  const rows: Record<string, string>[] = [];
-  for (const line of lines.slice(1)) {
-    const fields = parseCsvLine(line);
-    const row: Record<string, string> = {};
-    for (let i = 0; i < header.length; i++) { row[header[i]] = fields[i] ?? ''; }
-    rows.push(row);
-  }
-  return rows;
-}
-
-async function fetchCsv(path: string): Promise<Record<string, string>[]> {
-  const response = await fetch(path, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`Unable to fetch ${path}: ${response.status}`);
-  return parseCsv(await response.text());
-}
-
-async function loadForecastBundle(): Promise<ForecastBundle> {
-  if (!forecastBundlePromise) {
-    forecastBundlePromise = (async () => {
-      const [submissionRaw, testRaw, trainRaw] = await Promise.all([
-        fetchCsv('/data/submission.csv'),
-        fetchCsv('/data/test.csv'),
-        fetchCsv('/data/train.csv'),
-      ]);
-
-      const submissionRows: SubmissionRow[] = submissionRaw.map((r) => ({
-        date: r.Date,
-        predictedMeals: Number(r.employees_count) || 0,
-      }));
-
-      const testPresence = new Map<string, number>();
-      for (const row of testRaw) { testPresence.set(row.Date, Number(row.office_present) || 0); }
-
-      const points: ForecastPoint[] = submissionRows.map((r) => ({
-        date: r.date,
-        predictedMeals: r.predictedMeals,
-        expectedPresence: testPresence.get(r.date) ?? 0,
-      }));
-
-      const groupedActuals = new Map<string, { sum: number; count: number }>();
-      for (const row of trainRaw) {
-        const date = row.Date;
-        const val = Number(row.employees_count);
-        if (!Number.isFinite(val)) continue;
-        const prev = groupedActuals.get(date) ?? { sum: 0, count: 0 };
-        groupedActuals.set(date, { sum: prev.sum + val, count: prev.count + 1 });
-      }
-      const actualByDate = new Map<string, number>();
-      groupedActuals.forEach((agg, date) => {
-        actualByDate.set(date, Math.round(agg.sum / Math.max(agg.count, 1)));
-      });
-
-      return { points, actualByDate };
-    })();
-  }
-  return forecastBundlePromise;
+// Normalise un taux de gaspillage en pourcentage : les anciennes entrées le
+// stockent sous forme de fraction (≤ 1, ex. 0.0469) — le live utilise un
+// pourcentage (ex. 1.3).
+function normalizeWasteRate(rate: number | undefined): number {
+  const r = rate ?? 0;
+  return r <= 1 ? r * 100 : r;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -421,9 +360,26 @@ export const api = {
 
   /* ── Tomorrow preparation (backend + forecast) ──────────── */
 
+  // Persiste la prévision (repas recommandés) dans le dossier opérationnel du
+  // jour concerné. C'est ce qui alimente /history : sans cette écriture, le
+  // champ forecast d'une journée reste à 0 et l'historique ne peut pas afficher
+  // une comparaison prévision/réel pertinente.
+  async persistForecast(forecast: ForecastResult): Promise<void> {
+    if (!forecast?.forecastAvailable) return;
+    const key = forecast.date || tomorrowKey();
+    await apiPost(`/api/operations/${key}/planned`, {
+      planned_meals: forecast.recommendedMeals,
+      forecast: forecast.recommendedMeals,
+      presence: forecast.officePresent,
+    });
+  },
+
   async getTomorrowState(): Promise<TomorrowState> {
     const today = await this.getTodayState();
     const f = await this.getTomorrowForecast();
+    if (f.forecastAvailable) {
+      await this.persistForecast(f);
+    }
     return {
       locked: today.status !== 'cloturee',
       forecast: f,
@@ -434,6 +390,9 @@ export const api = {
 
   async getPlanningInputs(): Promise<PlanningInputs> {
     const f = await this.getTomorrowForecast();
+    if (f.forecastAvailable) {
+      await this.persistForecast(f);
+    }
     return {
       expectedPresence: f.forecastAvailable ? f.officePresent : 0,
       selectedMenuId: catalogMenuItems()[0]?.id ?? '',
@@ -488,52 +447,160 @@ export const api = {
     return delay(kpis);
   },
 
-  /* ── Chart data (from CSV — deterministic) ──────────────── */
+  /* ── Chart data (from live operational records) ─────────── */
 
   async getForecastVsActual(days: 7 | 14 | 30 = 14): Promise<ForecastVsActualPoint[]> {
-    const bundle = await loadForecastBundle();
-    const points: ForecastVsActualPoint[] = bundle.points.map((p) => ({
-      date: p.date,
-      shortDate: formatShortDate(p.date),
-      forecast: p.predictedMeals,
-      actual: bundle.actualByDate.get(p.date) ?? null,
-    }));
+    // Même source que /history et /waste : les dossiers opérationnels.
+    // Prévision = forecast persisté à la planification; réel = servis au bilan.
+    const points = await this._operationalChartPoints();
     return delay(points.slice(-days));
   },
 
-  /* ── History (from CSV — deterministic) ─────────────────── */
-
-  async getForecastHistory(): Promise<ForecastHistoryEntry[]> {
-    const bundle = await loadForecastBundle();
-    const entries: ForecastHistoryEntry[] = bundle.points.map((p) => {
-      const actual = bundle.actualByDate.get(p.date) ?? null;
-      const hasActual = actual !== null && actual > 0;
-      const ecart = hasActual ? actual! - p.predictedMeals : null;
-      const errorPct = hasActual ? Math.round((Math.abs(ecart!) / Math.max(p.predictedMeals, 1)) * 1000) / 10 : null;
-      const status: 'bon' | 'acceptable' | 'mauvais' =
-        !hasActual ? 'acceptable' : errorPct! < 5 ? 'bon' : errorPct! < 10 ? 'acceptable' : 'mauvais';
-      return { id: `hist-${p.date}`, date: p.date, officePresent: p.expectedPresence, employeesCount: p.predictedMeals, forecast: p.predictedMeals, actual: actual ?? 0, ecart: ecart ?? 0, errorPct: errorPct ?? 0, status };
-    });
-    return delay(entries);
+  // Point de donnée partagé (prévision / réel / préparés) construit depuis les
+  // journées réellement servies des enregistrements opérationnels — unique
+  // source de vérité. Pour les jours sans prévision persistée, forecast est
+  // null (aucune valeur inventée) : la série Prévision" reste en pointillés au
+  // lieu de retomber artificiellement à zéro.
+  async _operationalChartPoints(): Promise<ForecastVsActualPoint[]> {
+    try {
+      const days = await this._servedDays();
+      return days.map((e) => ({
+        date: e.date,
+        shortDate: formatShortDate(e.date),
+        forecast: (e.forecast ?? 0) > 0 ? (e.forecast ?? 0) : null,
+        actual: e.served ?? 0,
+        prepared: e.prepared ?? 0,
+      }));
+    } catch {
+      return [];
+    }
   },
 
-  /* ── Waste (from backend operations) ────────────────────── */
+  /* ═══ Daily records — unique source of truth for history / waste / charts ═══
+   *
+   * Une même définition partagée par /history, /waste et le graphique du
+   * dashboard : une "journée d'historique" = une journée réellement servie
+   * (bilan saisi, served > 0) dans les dossiers opérationnels. Le menu associé
+   * provient du plan hebdomadaire canonique (/api/menus), jamais d'un champ
+   * dédié au gaspillage : relation Date → Menu → Service → Bilan → Waste.
+   * ────────────────────────────────────────────────────────────────────────── */
+
+  // Opérations brutes enrichies avec leur menu planifié canonique.
+  async _dailyData(): Promise<DailyRecord[]> {
+    interface MenuPlanRaw {
+      date: string; entrees?: string; plat_principal_1?: string;
+      plat_principal_2?: string; plat_principal_1_id?: string; plat_principal_2_id?: string;
+    }
+    const [ops, menus] = await Promise.all([
+      apiGet<DailyRecord[]>('/api/operations'),
+      apiGet<MenuPlanRaw[]>('/api/menus'),
+    ]);
+    const menuByDate = new Map(menus.map((m) => [m.date, m]));
+    return ops.map((op) => {
+      const planned = menuByDate.get(op.date);
+      const plannedName = planned
+        ? [planned.plat_principal_1, planned.plat_principal_2]
+            .filter((n): n is string => !!n && n.trim() !== '')
+            .join(', ')
+        : '';
+      const storedName = (op.menu ?? [])
+        .map((m) => m.name || m.dishId || '')
+        .filter(Boolean)
+        .join(', ');
+      return {
+        ...op,
+        menuLabel: plannedName || storedName || 'Non défini',
+      };
+    });
+  },
+
+  // Journées réellement servies (served > 0), triées par date croissante.
+  async _servedDays(): Promise<DailyRecord[]> {
+    const all = await this._dailyData();
+    return all
+      .filter((e) => (e.served ?? 0) > 0)
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  },
+
+  // Fenêtre historique canonique partagée par /history et /waste.
+  // Une "journée d'historique" = une journée réellement servie ET dont la
+  // prévision a été persistée à la planification (served > 0 et forecast > 0).
+  // Sans prévision on ne peut ni comparer ni suivre l'écart, donc l'entrée
+  // n'appartient pas au socle historique commun. Cette définition est calculée
+  // (jamais codée en dur) : chaque nouvelle journée complète rejoint l'historique.
+  async _historyWindow(): Promise<DailyRecord[]> {
+    const days = await this._servedDays();
+    return days.filter((e) => (e.forecast ?? 0) > 0);
+  },
+
+  /* ── History (from live operational records — single source of truth) ── */
+
+  async getForecastHistory(): Promise<ForecastHistoryEntry[]> {
+    // L'historique vient des mêmes dossiers opérationnels que le reste de
+    // l'application (data/operational/*.json via /api/operations). Chaque
+    // journée clôturée (bilan saisi) devient une entrée. Prévision = forecast
+    // persévéré à la planification; réel = servis enregistrés au bilan.
+    try {
+      const entries = await this._historyWindow();
+
+      const rows = entries
+        .map((e) => {
+          const forecast = e.forecast ?? 0;
+          const actual = e.served ?? 0;
+          // L'écart prévision/réel n'est défini que si une prévision a bien été
+          // persistée : sans elle, on n'invente aucune valeur.
+          const hasForecast = forecast > 0;
+          const ecart = hasForecast ? actual - forecast : null;
+          const errorPct = hasForecast
+            ? Math.round((Math.abs(ecart as number) / forecast) * 1000) / 10
+            : null;
+          const status: 'bon' | 'acceptable' | 'mauvais' =
+            !hasForecast
+              ? 'acceptable'
+              : (errorPct as number) < 5
+                ? 'bon'
+                : (errorPct as number) < 10
+                  ? 'acceptable'
+                  : 'mauvais';
+          return {
+            id: `hist-${e.date}`,
+            date: e.date,
+            officePresent: e.presence ?? 0,
+            employeesCount: forecast,
+            forecast,
+            actual,
+            ecart,
+            errorPct,
+            hasForecast,
+            status,
+          };
+        });
+
+      return delay(rows);
+    } catch {
+      return [];
+    }
+  },
+
+  /* ── Waste (same canonical source & window as /history) ── */
 
   async getWasteDays(): Promise<WasteDay[]> {
     try {
-      const entries = await apiGet<{ date: string; prepared: number; served: number; waste: number; waste_rate: number; menu: { categoryId: string; dishId: string }[] }[]>('/api/operations');
-      if (entries.length === 0) return [];
-      return entries
-        .filter((e) => e.prepared > 0)
-        .slice(-14)
+      // Même définition que /history : journées servies dans les 30 derniers
+      // jours. Le menu vient du plan hebdomadaire canonique (via /api/menus).
+      const days = await this._historyWindow();
+      return days
+        .filter((e) => (e.prepared ?? 0) > 0)
         .map((e) => ({
           date: e.date,
           shortDate: formatShortDate(e.date),
-          prepared: e.prepared,
-          served: e.served,
-          wasted: e.waste,
-          wasteRate: e.waste_rate,
-          menu: e.menu?.map((m: { dishId: string }) => m.dishId).join(', ') || 'Non défini',
+          prepared: e.prepared ?? 0,
+          served: e.served ?? 0,
+          wasted: e.waste ?? 0,
+          // Taux arrondi à 1 décimale. Normalisation : certaines anciennes
+          // entrées stockent une fraction (≤1) au lieu d'un pourcentage.
+          wasteRate: roundToOne(normalizeWasteRate(e.waste_rate)),
+          menu: e.menuLabel ?? 'Non défini',
         }));
     } catch {
       return [];
@@ -542,13 +609,12 @@ export const api = {
 
   async getWasteSummary(): Promise<WasteSummary> {
     try {
-      const entries = await apiGet<{ date: string; prepared: number; served: number; waste: number; waste_rate: number }[]>('/api/operations');
-      if (entries.length === 0) return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
-      const recent = entries.filter((e) => e.prepared > 0).slice(-30);
+      const days = await this._historyWindow();
+      const recent = days.filter((e) => (e.prepared ?? 0) > 0);
       if (recent.length === 0) return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
-      const totalPrepared = recent.reduce((s, e) => s + e.prepared, 0);
-      const totalServed = recent.reduce((s, e) => s + e.served, 0);
-      const totalWasted = recent.reduce((s, e) => s + e.waste, 0);
+      const totalPrepared = recent.reduce((s, e) => s + (e.prepared ?? 0), 0);
+      const totalServed = recent.reduce((s, e) => s + (e.served ?? 0), 0);
+      const totalWasted = recent.reduce((s, e) => s + (e.waste ?? 0), 0);
       const avgWasteRate = totalPrepared > 0 ? Math.round((totalWasted / totalPrepared) * 1000) / 10 : 0;
       return {
         prepared: totalPrepared,
@@ -622,7 +688,7 @@ export const api = {
   async getDataSources(): Promise<DataSource[]> {
     try {
       const metrics = await api.getModelMetrics();
-      const bundle = await loadForecastBundle();
+      const ops = await apiGet<{ date?: string }[]>('/api/operations');
       return [
         {
           id: 'catalog-menu',
@@ -645,24 +711,14 @@ export const api = {
           description: `MAE ${metrics.mae.toFixed(1)} · RMSE ${metrics.rmse.toFixed(1)} repas`,
         },
         {
-          id: 'history-csv',
-          name: 'Historique (CSV)',
-          status: 'synced',
-          lastSync: 'À jour',
-          records: bundle.points.length,
-          freshness: 'fresh',
-          availability: 100,
-          description: 'Données d\'entraînement et de soumission',
-        },
-        {
           id: 'operations-backend',
-          name: 'Opérations journalières (API)',
+          name: 'Historique / opérations journalières (API)',
           status: 'synced',
           lastSync: 'En ligne',
-          records: 0,
+          records: ops.length,
           freshness: 'fresh',
           availability: 100,
-          description: 'Bilans saisis via le backend',
+          description: 'Bilans, prévisions et gaspillage — source de vérité unique',
         },
       ];
     } catch {
@@ -670,19 +726,27 @@ export const api = {
     }
   },
 
-  /* ── Attendance ─────────────────────────────────────────── */
+  /* ── Attendance (from live operational records) ─────────── */
 
   async getAttendanceData(): Promise<AttendancePoint[]> {
-    const bundle = await loadForecastBundle();
-    const points: AttendancePoint[] = bundle.points.map((p) => ({
-      date: p.date,
-      shortDate: formatShortDate(p.date),
-      officePresent: p.expectedPresence,
-      employeesCount: p.predictedMeals,
-      meals: p.predictedMeals,
-      ratio: p.expectedPresence > 0 ? p.predictedMeals / p.expectedPresence : 0,
-    }));
-    return delay(points);
+    try {
+      const entries = await apiGet<{
+        date: string; served?: number; forecast?: number; presence?: number;
+      }[]>('/api/operations');
+      const points: AttendancePoint[] = entries
+        .filter((e) => (e.served ?? 0) > 0 || (e.presence ?? 0) > 0)
+        .map((e) => ({
+          date: e.date,
+          shortDate: formatShortDate(e.date),
+          officePresent: e.presence ?? 0,
+          employeesCount: e.forecast ?? 0,
+          meals: e.served ?? 0,
+          ratio: (e.presence ?? 0) > 0 ? (e.served ?? 0) / (e.presence ?? 0) : 0,
+        }));
+      return delay(points);
+    } catch {
+      return [];
+    }
   },
 
   /* ── Planned menus (weekly planning) ───────────────────── */

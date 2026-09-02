@@ -47,14 +47,10 @@ export default function HistoryPage() {
   const [search, setSearch] = React.useState('');
 
   React.useEffect(() => {
+    // Le socle historique est déjà celui partagé avec /waste (_historyWindow) :
+    // aucune fenêtre propre à cette page, sinon les deux pages divergeraient.
     api.getForecastHistory().then((h) => {
-      // La page est étiquetée "30j" : on borne explicitement la fenêtre aux
-      // 30 derniers jours calendaires (jamais implicite : date de début calculée
-      // et comparée au champ date de chaque entrée).
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 29);
-      const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
-      setHistory(h.filter((e) => e.date >= cutoffKey));
+      setHistory(h);
       setLoading(false);
     });
   }, []);
@@ -85,14 +81,15 @@ export default function HistoryPage() {
   }, [history, sortKey, sortDir, statusFilter, search]);
 
   const completed = history.filter((e) => e.actual > 0);
-  const avgForecast = completed.length > 0
-    ? Math.round(completed.reduce((s, e) => s + e.forecast, 0) / completed.length)
+  const forecasted = completed.filter((e) => e.hasForecast);
+  const avgForecast = forecasted.length > 0
+    ? Math.round(forecasted.reduce((s, e) => s + e.forecast, 0) / forecasted.length)
     : 0;
   const avgActual = completed.length > 0
     ? Math.round(completed.reduce((s, e) => s + e.actual, 0) / completed.length)
     : 0;
-  const avgWaste = completed.length > 0
-    ? Math.round(completed.reduce((s, e) => s + (e.actual > 0 ? Math.abs(e.ecart) / e.actual * 100 : 0), 0) / completed.length * 10) / 10
+  const avgWaste = forecasted.length > 0
+    ? Math.round(forecasted.reduce((s, e) => s + (e.ecart != null ? Math.abs(e.ecart) / e.actual * 100 : 0), 0) / forecasted.length * 10) / 10
     : 0;
 
   const errorChartData = history.map((e) => ({
@@ -286,16 +283,16 @@ export default function HistoryPage() {
                   <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.employeesCount)}</td>
                   <td className="py-3 pr-4 font-medium text-foreground">{formatNumber(entry.forecast)}</td>
                   <td className="py-3 pr-4 text-muted-foreground">
-                    {entry.actual > 0 ? formatNumber(entry.actual) : '—'}
+                    {entry.hasForecast ? formatNumber(entry.actual) : formatNumber(entry.actual)}
                   </td>
                   <td className={cn(
                     'py-3 pr-4 font-medium',
-                    entry.ecart > 0 ? 'text-destructive' : entry.ecart < 0 ? 'text-success' : 'text-muted-foreground'
+                    entry.ecart != null && entry.ecart > 0 ? 'text-destructive' : entry.ecart != null && entry.ecart < 0 ? 'text-success' : 'text-muted-foreground'
                   )}>
-                    {entry.actual > 0 ? `${entry.ecart > 0 ? '+' : ''}${entry.ecart}` : '—'}
+                    {entry.hasForecast && entry.ecart != null ? `${entry.ecart > 0 ? '+' : ''}${entry.ecart}` : '—'}
                   </td>
                   <td className="py-3 pr-4 text-muted-foreground">
-                    {entry.actual > 0 ? `${entry.errorPct}%` : '—'}
+                    {entry.hasForecast && entry.errorPct != null ? `${entry.errorPct}%` : '—'}
                   </td>
                   <td className="py-3 pr-4">
                     <span className={cn('rounded px-2 py-0.5 text-xs font-medium', statusConfig[entry.status].className)}>
