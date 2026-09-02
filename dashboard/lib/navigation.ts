@@ -11,12 +11,6 @@ export const navSections: NavSection[] = [
         description: 'Assistant opérationnel du jour',
       },
       {
-        label: 'Préparer demain',
-        href: '/prepare',
-        icon: 'ChefHat',
-        description: 'Préparation du prochain service',
-      },
-      {
         label: 'Planifier les menus',
         href: '/menus-planner',
         icon: 'CalendarDays',

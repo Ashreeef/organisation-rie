@@ -25,7 +25,6 @@ import {
   PlayCircle,
   StopCircle,
   ClipboardCheck,
-  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -258,19 +257,6 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* ── STATE: Preparation ─────────────────────────────── */}
-      {status === 'preparation' && (
-        <Card className="p-6">
-          <SectionHeader title="Préparation du lendemain" />
-          <Link href="/prepare">
-            <Button variant="outline" className="mt-4 w-full">
-              Préparer demain
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
-          </Link>
-        </Card>
-      )}
-
       {/* ── STATE: Bilan to fill ───────────────────────────── */}
       {status === 'bilan_a_saisir' && (
         <Card className="p-6">
@@ -399,12 +385,6 @@ export default function DashboardPage() {
                     </p>
                   </div>
                 </div>
-                <Link href="/prepare">
-                  <Button className="mt-4 w-full">
-                    Préparer demain
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
               </>
             ) : (
               <div className="mt-4">

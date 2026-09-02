@@ -51,11 +51,6 @@ export const noForecast = (date: string, reason?: string | null): ForecastResult
   recommendationNote: '',
 });
 
-export interface PlanningInputs {
-  expectedPresence: number;
-  selectedMenuId: string;
-}
-
 export interface KPI {
   id: string;
   label: string;
@@ -100,18 +95,6 @@ export interface WasteSummary {
   wasted: number;
   wasteRate: number;
   trend: Trend;
-}
-
-export interface MenuItem {
-  id: string;
-  name: string;
-  category: 'traditionnel' | 'international' | 'leger' | 'special';
-  attractiveness: number;
-  predictedWaste: number;
-  costPerMeal: number;
-  score: number;
-  description: string;
-  ingredients: string[];
 }
 
 export interface ForecastHistoryEntry {
@@ -204,13 +187,6 @@ export interface TodayState {
   actualMealsServed: number;
   overrideReason: string | null;
   bilan: BilanRecord | null;
-}
-
-export interface TomorrowState {
-  locked: boolean;
-  forecast: ForecastResult | null;
-  plannedMeals: number;
-  presenceInput: number;
 }
 
 export interface OperationalEntry {

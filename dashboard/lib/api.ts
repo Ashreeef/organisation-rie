@@ -12,12 +12,10 @@
 
 import type {
   ForecastResult,
-  PlanningInputs,
   KPI,
   ForecastVsActualPoint,
   WasteDay,
   WasteSummary,
-  MenuItem,
   MenuPlan,
   ForecastHistoryEntry,
   ModelMetrics,
@@ -26,10 +24,9 @@ import type {
   AttendancePoint,
   ServiceStatus,
   TodayState,
-  TomorrowState,
 } from '@/lib/types';
 import { noForecast } from '@/lib/types';
-import { DISHES, DISH_CATEGORIES } from '@/lib/menu-catalog';
+import { DISHES } from '@/lib/menu-catalog';
 
 /* -------------------------------------------------------------------------- */
 /*  Backend helpers                                                            */
@@ -93,25 +90,6 @@ function normalizeWasteRate(rate: number | undefined): number {
   const r = rate ?? 0;
   return r <= 1 ? r * 100 : r;
 }
-
-/* -------------------------------------------------------------------------- */
-/*  Catalog-backed menu options (shared with the ML pipeline)                  */
-/* -------------------------------------------------------------------------- */
-
-const catalogMenuItems = (): MenuItem[] => {
-  const catLabel = new Map(DISH_CATEGORIES.map((c) => [c.id, c.label]));
-  return DISHES.map((d) => ({
-    id: `menu-${d.id}`,
-    name: d.name,
-    category: d.is_traditional ? 'traditionnel' : 'international',
-    attractiveness: Math.round(d.typical_ratio * 100),
-    predictedWaste: d.ratio_effect === 'faible' ? 4 : d.ratio_effect === 'élevé' ? 9 : 6.5,
-    costPerMeal: 0,
-    score: Math.round(d.typical_ratio * 100),
-    description: catLabel.get(d.category) ?? 'Catalogue',
-    ingredients: d.aliases.slice(0, 3),
-  }));
-};
 
 /* -------------------------------------------------------------------------- */
 /*  Service lifecycle (backend is the single source of truth)                 */
@@ -297,10 +275,6 @@ export const api = {
     }
   },
 
-  /* ── Catalog menus (single source of truth: menu-catalog) ─ */
-
-  getMenus(): Promise<MenuItem[]> { return delay(catalogMenuItems()); },
-
   /* ── Service lifecycle actions (persisted on the backend) ─ */
 
   async getTodayState(): Promise<TodayState> {
@@ -372,38 +346,6 @@ export const api = {
       forecast: forecast.recommendedMeals,
       presence: forecast.officePresent,
     });
-  },
-
-  async getTomorrowState(): Promise<TomorrowState> {
-    const today = await this.getTodayState();
-    const f = await this.getTomorrowForecast();
-    if (f.forecastAvailable) {
-      await this.persistForecast(f);
-    }
-    return {
-      locked: today.status !== 'cloturee',
-      forecast: f,
-      plannedMeals: f.forecastAvailable ? f.recommendedMeals : 0,
-      presenceInput: f.forecastAvailable ? f.officePresent : 0,
-    };
-  },
-
-  async getPlanningInputs(): Promise<PlanningInputs> {
-    const f = await this.getTomorrowForecast();
-    if (f.forecastAvailable) {
-      await this.persistForecast(f);
-    }
-    return {
-      expectedPresence: f.forecastAvailable ? f.officePresent : 0,
-      selectedMenuId: catalogMenuItems()[0]?.id ?? '',
-    };
-  },
-
-  async updatePlanningInputs(values: Partial<PlanningInputs>): Promise<PlanningInputs> {
-    if (values.expectedPresence !== undefined) {
-      await apiPost(`/api/operations/${tomorrowKey()}/planned`, { presence: values.expectedPresence });
-    }
-    return this.getPlanningInputs();
   },
 
   /* ── Dashboard KPIs (simplified — no ML jargon) ─────────── */
