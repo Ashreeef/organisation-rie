@@ -17,11 +17,13 @@ sys.path.insert(0, str(ROOT))
 
 from src.forecasting.daily_features import (  # noqa: E402
     _deployment_feature_cols,
+    _fetch_open_meteo_forecast,
     _fill_live_nans,
     _holiday_columns,
     _office_stats,
     _ramadan_flags,
     _weather_defaults,
+    _wmo_to_conditions,
     build_features,
     generate_features,
     roll_office_forward,
@@ -109,6 +111,63 @@ class TestWorkspace:
         assert out["op_dow_mean"].notna().all()
         assert out["op_dow_zscore"].notna().all()
         assert out.loc[1, "op_dow_mean"] == pytest.approx(545.0)
+
+
+class TestWmoToConditions:
+    """Le code WMO + cloud_cover -> la chaîne exacte utilisée par l'entraînement."""
+
+    def test_no_precip_clear_sky(self):
+        assert _wmo_to_conditions(0, 5.0) == "Clear"
+
+    def test_no_precip_partially_cloudy(self):
+        assert _wmo_to_conditions(1, 40.0) == "Partially cloudy"
+
+    def test_no_precip_overcast(self):
+        assert _wmo_to_conditions(2, 90.0) == "Overcast"
+
+    def test_rain_with_actual_precipitation(self):
+        # WMO 61 = pluie légère — mais seule une précipitation mesurée > 0 vaut
+        # "Rain" (cohérent avec precipitation_type du training).
+        assert _wmo_to_conditions(61, 10.0, precipitation_mm=1.5) == "Rain"
+        assert _wmo_to_conditions(61, 40.0, precipitation_mm=1.5) == "Rain, Partially cloudy"
+        assert _wmo_to_conditions(61, 90.0, precipitation_mm=1.5) == "Rain, Overcast"
+
+    def test_wmo_rain_without_outcome_is_cloudy(self):
+        # Brouillard (code 45) sans précipitation mesurée -> pas de "Rain".
+        assert _wmo_to_conditions(45, 60.0, precipitation_mm=0.0) == "Partially cloudy"
+
+    def test_zero_precip_with_rain_code_stays_cloudy(self):
+        # WMO signale de l'orage (95) mais aucune précipitation mesurée : ce n'est
+        # pas "Rain" car le training ne retient "rain" que si precipitation_mm > 0.
+        assert _wmo_to_conditions(95, 0.0, precipitation_mm=0.0) == "Clear"
+
+
+class TestOpenMeteoForecast:
+    """Le fetch Open-Meteo doit être robuste, même si le réseau est indisponible."""
+
+    def test_empty_dates_returns_none(self):
+        assert _fetch_open_meteo_forecast([]) is None
+
+    def test_wmo_fields_and_index(self):
+        fc = _fetch_open_meteo_forecast(
+            [pd.Timestamp("2026-09-02"), pd.Timestamp("2026-09-03")]
+        )
+        if fc is None:
+            pytest.skip("pas de réseau / réponse indisponible")
+        assert isinstance(fc.index, pd.DatetimeIndex)
+        assert len(fc) == 2
+        for col in ("temperature", "temperature_felt", "precipitation_mm",
+                    "wind_speed_kmh", "wind_gust_kmh", "cloud_cover_pct",
+                    "weather_conditions"):
+            assert col in fc.columns
+            assert fc[col].notna().all()
+        assert set(fc["weather_conditions"]) <= {
+            "Clear", "Partially cloudy", "Overcast",
+            "Rain", "Rain, Partially cloudy", "Rain, Overcast",
+        }
+        # rain label cohérent avec precipitation_mm
+        for cond, pm in zip(fc["weather_conditions"], fc["precipitation_mm"]):
+            assert ("Rain" in cond) == (pm > 0)
 
 
 class TestFidelityReproduction:

@@ -35,8 +35,11 @@ Notes de production:
 """
 import argparse
 import json
+import logging
 import pickle
 import sys
+import urllib.request
+import urllib.error
 import warnings
 from pathlib import Path
 
@@ -47,6 +50,8 @@ warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+logger = logging.getLogger(__name__)
 
 from src.calendar_utils import (  # noqa: E402
     algerian_national_dates,
@@ -387,6 +392,128 @@ def _weather_defaults(history: pd.DataFrame) -> pd.DataFrame:
     return real.groupby("month_n").mean()
 
 
+# ---------------------------------------------------------------------------
+# 3b. Prévisions météo réelles (Open-Meteo, gratuit, sans clé API)
+# ---------------------------------------------------------------------------
+
+_SITE_LAT = 36.7
+_SITE_LON = 3.20
+_OPEN_METEO_URL = (
+    "https://api.open-meteo.com/v1/forecast"
+    "?latitude={lat}&longitude={lon}"
+    "&daily=temperature_2m_max,temperature_2m_min,"
+    "apparent_temperature_max,apparent_temperature_min,"
+    "precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max,"
+    "weather_code,cloud_cover_mean"
+    "&timezone=Africa%2FAlgiers"
+    "&start_date={start}&end_date={end}"
+)
+
+# Codes WMO dont l'ensemble implique une précipitation mesurable.
+_WMO_PRECIP = frozenset(
+    {45, 48} | set(range(51, 100))   # 51-99 : bruine, pluie, neige, orage
+)
+
+
+def _wmo_to_conditions(
+    wmo_code: int, cloud_cover_pct: float, precipitation_mm: float = 0.0
+) -> str:
+    """Convertit un code WMO + cloud_cover en la chaîne exacte de l'entraînement.
+
+    Les 6 libellés (``Clear``, ``Partially cloudy``, ``Overcast``,
+    ``Rain``, ``Rain, Partially cloudy``, ``Rain, Overcast``) ont été
+    retenus par target-encoding dans le bundle déployé.
+
+    La pluie est déterminée par ``precipitation_mm > 0`` (cohérent avec le
+    training qui utilise ``precipitation_type="rain"`` quand ``> 0``), et non
+    par le seul code WMO qui peut indiquer un brouillard sans arrosée.
+    """
+    is_rain = precipitation_mm > 0
+    if is_rain:
+        if cloud_cover_pct > 80:
+            return "Rain, Overcast"
+        if cloud_cover_pct > 20:
+            return "Rain, Partially cloudy"
+        return "Rain"
+    if cloud_cover_pct > 80:
+        return "Overcast"
+    if cloud_cover_pct > 20:
+        return "Partially cloudy"
+    return "Clear"
+
+
+def _fetch_open_meteo_forecast(
+    target_dates,
+    lat: float = _SITE_LAT,
+    lon: float = _SITE_LON,
+) -> "pd.DataFrame | None":
+    """Récupère les prévisions quotidiennes Open-Meteo pour les dates cibles.
+
+    Retourne un DataFrame indexé par ``Date`` (normalisée) avec les colonnes
+    ``temperature``, ``temperature_felt``, ``precipitation_mm``,
+    ``wind_speed_kmh``, ``wind_gust_kmh``, ``cloud_cover_pct``,
+    ``weather_conditions``.  Retourne ``None`` en cas d'erreur (hors-ligne,
+    délai dépassé, réponse invalide) pour que l'appelant replie sur la
+    climatologie.
+    """
+    dates = pd.DatetimeIndex(target_dates)
+    if dates.empty:
+        return None
+    start = dates.min().normalize()
+    end = dates.max().normalize()
+    url = _OPEN_METEO_URL.format(
+        lat=lat, lon=lon,
+        start=start.strftime("%Y-%m-%d"),
+        end=end.strftime("%Y-%m-%d"),
+    )
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        logger.warning("Open-Meteo request failed (%s), falling back to climatology", exc)
+        return None
+
+    daily = data.get("daily", {})
+    if not daily or "time" not in daily:
+        logger.warning("Open-Meteo response missing daily data, falling back to climatology")
+        return None
+
+    fc_dates = pd.to_datetime(daily["time"]).normalize()
+    fc = pd.DataFrame({
+        "temperature": [
+            (t_max + t_min) / 2
+            for t_max, t_min in zip(daily["temperature_2m_max"],
+                                    daily["temperature_2m_min"])
+        ],
+        "temperature_felt": [
+            (a_max + a_min) / 2
+            for a_max, a_min in zip(daily["apparent_temperature_max"],
+                                    daily["apparent_temperature_min"])
+        ],
+        "precipitation_mm": daily["precipitation_sum"],
+        "wind_speed_kmh": daily["wind_speed_10m_max"],
+        "wind_gust_kmh": daily["wind_gusts_10m_max"],
+        "cloud_cover_pct": daily.get("cloud_cover_mean", [0.0] * len(fc_dates)),
+        "weather_code": daily["weather_code"],
+    }, index=fc_dates)
+    fc.index.name = "Date"
+
+    # Convertir les codes WMO en chaînes d'entraînement.
+    fc["weather_conditions"] = [
+        _wmo_to_conditions(int(wc), float(cc), float(pm))
+        for wc, cc, pm in zip(
+            fc["weather_code"], fc["cloud_cover_pct"], fc["precipitation_mm"]
+        )
+    ]
+
+    logger.info(
+        "Open-Meteo forecast fetched: %d days (%s → %s)",
+        len(fc), start.date(), end.date(),
+    )
+    return fc
+
+
 def _calendar_features(d: pd.Timestamp, min_date: pd.Timestamp) -> dict:
     feats = {
         "day_of_month": d.day,
@@ -428,7 +555,8 @@ def _build_workspace(
     Les jours cibles utilisent :
       - le menu planifié ('' si non renseigné) issu de ``planned_menus`` quand
         disponible, sinon un menu vide (flags 0, TF-IDF « empty ») ;
-      - la climatologie mensuelle pour la météo (les jours futurs sont inconnus).
+      - les prévisions Open-Meteo (lat=36.7, lon=3.20) pour la météo ;
+        repli sur la climatologie mensuelle en cas d'erreur réseau.
 
     Le workspace reproduit la chronologie *éparse* du notebook 03 : les lignes
     observées (avec valeurs réelles, y compris ratio) suivies des lignes cibles,
@@ -439,6 +567,14 @@ def _build_workspace(
 
     defaults = _weather_defaults(history)
     min_date = history["Date"].min()
+
+    # --- Prévisions météo réelles (Open-Meteo, gratuit, sans clé) -----------
+    target_dates = list(office_preds.keys())
+    forecast = _fetch_open_meteo_forecast(target_dates)
+    if forecast is not None:
+        logger.info("Using Open-Meteo forecast for %d target dates", len(forecast))
+    else:
+        logger.info("Open-Meteo unavailable, falling back to monthly climatology")
 
     if planned_menus is None:
         planned_menus = _load_planned_menus()
@@ -461,21 +597,38 @@ def _build_workspace(
         row.update(ram.to_dict())
         row["office_present"] = float(opv)
 
-        m = d.month
-        if m in defaults.index:
-            row["temperature"] = float(defaults.loc[m, "temperature"])
-            row["temperature_felt"] = float(defaults.loc[m, "temperature_felt"])
-            row["wind_speed_kmh"] = float(defaults.loc[m, "wind_speed_kmh"])
-            row["cloud_cover_pct"] = float(defaults.loc[m, "cloud_cover_pct"])
-        else:
-            row["temperature"] = row["temperature_felt"] = 20.0
-            row["wind_speed_kmh"] = row["cloud_cover_pct"] = 0.0
-        row["precipitation_mm"] = 0.0
-        row["wind_gust_kmh"] = row["wind_speed_kmh"]
-        row["precipitation_type"] = ""
-        row["weather_conditions"] = ""
-
+        # --- Métééo : prévision Open-Meteo ou repli climatologie -----------
         d_norm = d.normalize()
+        fc_row = None
+        if forecast is not None and d_norm in forecast.index:
+            fc_row = forecast.loc[d_norm]
+
+        if fc_row is not None:
+            row["temperature"] = float(fc_row["temperature"])
+            row["temperature_felt"] = float(fc_row["temperature_felt"])
+            row["precipitation_mm"] = float(fc_row["precipitation_mm"])
+            row["wind_speed_kmh"] = float(fc_row["wind_speed_kmh"])
+            row["wind_gust_kmh"] = float(fc_row["wind_gust_kmh"])
+            row["cloud_cover_pct"] = float(fc_row["cloud_cover_pct"])
+            row["precipitation_type"] = (
+                "rain" if row["precipitation_mm"] > 0 else ""
+            )
+            row["weather_conditions"] = str(fc_row["weather_conditions"])
+        else:
+            m = d.month
+            if m in defaults.index:
+                row["temperature"] = float(defaults.loc[m, "temperature"])
+                row["temperature_felt"] = float(defaults.loc[m, "temperature_felt"])
+                row["wind_speed_kmh"] = float(defaults.loc[m, "wind_speed_kmh"])
+                row["cloud_cover_pct"] = float(defaults.loc[m, "cloud_cover_pct"])
+            else:
+                row["temperature"] = row["temperature_felt"] = 20.0
+                row["wind_speed_kmh"] = row["cloud_cover_pct"] = 0.0
+            row["precipitation_mm"] = 0.0
+            row["wind_gust_kmh"] = row["wind_speed_kmh"]
+            row["precipitation_type"] = ""
+            row["weather_conditions"] = ""
+
         if d_norm in planned_menus.index:
             pm = planned_menus.loc[d_norm]
             def _val(col):
