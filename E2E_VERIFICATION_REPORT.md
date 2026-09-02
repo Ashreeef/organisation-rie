@@ -18,7 +18,7 @@ exécuté, suite de tests lancée) :
 - ✅ Backend FastAPI opérationnel avec ensemble de 36 modèles (majorité XGBoost)
 - ✅ Frontend Next.js : **build de production réussi** (après correction d'une erreur de tri nul)
 - ✅ `tsc --noEmit` : **zéro erreur** ; `next lint` : **zéro avertissement** (8 erreurs corrigées)
-- ✅ Suite de tests : **126/128** (99,2 % approximatif ; 2 échecs sklearn pré-existants, hors runtime)
+- ✅ Suite de tests : **128/128** (100 %)
 - ✅ Source de vérité unique : `data/operational/*.json` via `/api/operations`
 - ✅ Toutes les routes frontend répondent HTTP 200 ; les routes supprimées renvoient 404
 
@@ -28,39 +28,43 @@ exécuté, suite de tests lancée) :
 
 ## 1. Suite de tests (backend)
 
-### Résultats : 126/128 PASSÉS ✅
+### Résultats : 128/128 PASSÉS ✅
 
 ```
 tests/…                                    Résultat   Détail
 tests/test_api.py                          ✅ 16/16    Calendar, health, intégration données réelles
-tests/test_daily_features.py               ⚠️ 9/11    2 échecs version pickle sklearn
-tests/test_feature_engineering.py          ✅ 11/11   157 features
-tests/test_forecasting.py                  ✅ 18/18   Coût asymétrique, blending
-tests/test_menu_cleaning.py                ✅ 22/22   NLP menus algériens
-tests/test_optimizer.py                    ✅ 9/9     Scoring menu
-tests/test_planner.py                      ✅ 9/9     Approvisionnement
-tests/test_waste_tracking.py               ✅ 12/12   Analytics gaspillage
-                              (autres modules)  → total 126 ✅
+tests/test_daily_features.py               ✅ 11/11    Transformeurs texte (résolu)
+tests/test_feature_engineering.py          ✅ 11/11    157 features
+tests/test_forecasting.py                  ✅ 18/18    Coût asymétrique, blending
+tests/test_menu_cleaning.py                ✅ 22/22    NLP menus algériens
+tests/test_optimizer.py                    ✅ 9/9      Scoring menu
+tests/test_planner.py                      ✅ 9/9      Approvisionnement
+tests/test_waste_tracking.py               ✅ 12/12    Analytics gaspillage
+                              (autres modules)  → total 128 ✅
 ```
 
-> Commandes : `python -m pytest -q` (temps : ~59 s, 41 avertissements)
+> Commandes : `python -m pytest -q` (temps : ~28 s, aucune erreur)
 
-### Échecs restants (pré-existants, NON bloquants)
+### Résolution du problème sklearn (corrigé ✅)
 
-Voici le détail des 2 échecs (`tests/test_daily_features.py`) :
-- `test_persisted_transformers_reproduce_training`
-- `test_apply_handles_unseen_categories_with_global_fallback`
+Les 2 échecs précédents (`test_persisted_transformers_reproduce_training`,
+`test_apply_handles_unseen_categories_with_global_fallback`) venaient d'un désalignement
+de version **scikit-learn** :
 
-- **Cause** : les transformateurs texte (`TfidfVectorizer`, `TfidfTransformer`, `TruncatedSVD`)
-  ont été sérialisés avec **scikit-learn 1.7.2** alors que le venv utilise **scikit-learn 1.4.2**
-  → `InconsistentVersionWarning` au deserialisation et résultats non reproductibles dans les tests.
-- **Impact** : tests uniquement (ces échecs ne touchent pas les endpoints de production).
-- **Sévérité** : BASSE — aucun impact runtime sur l'API.
-- **Correction recommandée** : retrainer/supprimer les transformers avec sklearn 1.4.2,
-  OU mettre à niveau le venv vers sklearn 1.7.2 pour correspondre au pickle.
+| Emplacement              | Version |
+|--------------------------|---------|
+| Transformeurs persistés (`menu_text_transformers.pkl`, `_deployment.pkl`) | **1.7.2** (créés) |
+| Venv (auparavant)        | 1.4.2   |
+| requirements.txt (avant) | 1.9.0   |
 
-> ⚠️ Note : le rapport précédent mentionnait « 119/120, sklearn 1.9.0 ». La réalité vérifiée :
-> **128 tests, venv scikit-learn 1.4.2**. Les chiffres ont été mis à jour.
+- **Cause** : en désérialisant les tranformeurs texte 1.7.2 avec 1.4.2, on obtient un
+  `InconsistentVersionWarning` et une reproduction non exacte de l'entraînement.
+- **Correctif appliqué** : installation de **scikit-learn==1.7.2** dans le venv + alignement
+  de `requirements.txt` sur `scikit-learn==1.7.2` — sans retraining, les pickle modèles
+  restent inchangés, prédictions identiques.
+- **Vérification** : les 2 tests ciblés passent, puis **128/128** au complet (28 s).
+- **Impact** : aucun sur les endpoints de production (36 modèles toujours chargés,
+  prévisions inchangées — vérifiées en direct).
 
 ---
 
@@ -221,7 +225,7 @@ préparés, gaspillés, taux de gaspillage, employés présents) :
 | data/operational/*.json (7 enregistrements) | ✅ source de vérité opérationnelle |
 | models/_deployment.pkl (36 modèles) | ✅ |
 | models/office_presence_lgb.pkl | ✅ sous-modèle |
-| models/menu_text_transformers.pkl | ✅ (provoque les 2 échecs de test sklearn) |
+| models/menu_text_transformers.pkl | ✅ (transformeurs texte, alignés sklearn 1.7.2) |
 
 ### Feature engineering ✅
 
@@ -257,7 +261,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ### Dépendances (vérité actuelle)
-- **Python scikit-learn : 1.4.2** (venv) — les pickle texte datent de 1.7.2 (source des 2 échecs de test).
+- **Python scikit-learn : 1.7.2** (venv, aligné sur les pickle transformeurs — voir §1).
 - LightGBM / XGBoost / CatBoost / FastAPI / uvicorn installés dans `.venv`.
 
 ---
@@ -284,7 +288,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - [x] Build de production : succès (après correction du tri nul sur /history)
 
 ### Tests
-- [x] 126/128 passés ; 2 échecs sklearn pré-existants (non critiques, hors runtime)
+- [x] 128/128 passés (100 %) — résolution sklearn 1.7.2 appliquée
 
 ### Données
 - [x] Fichiers requis présents, source de vérité unique `/api/operations`
@@ -299,10 +303,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ## 11. Problèmes connus & résolutions
 
 ### Problème 1 — Version pickle sklearn (tests texte)
-- **Sévérité** : BASSE (tests uniquement, aucun impact runtime API)
-- **Cause** : pickle des transformateurs texte créé avec sklearn 1.7.2, venv en 1.4.2
-- **Correctifs possibles** : (a) retrainer les transformateurs avec 1.4.2, ou
-  (b) mettre à niveau le venv vers 1.7.2.
+- **Statut** : ✅ RÉSOLU
+- **Cause** : pickle des transformateurs texte créé avec sklearn 1.7.2 alors que le venv était en 1.4.2 (et `requirements.txt` en 1.9.0).
+- **Correctif** : venv + `requirements.txt` alignés sur **scikit-learn==1.7.2** ; tests 128/128.
 
 ### Problème 2 — Build front : tri sur champ nullable (/history)
 - **Statut** : RÉSOLU
@@ -312,6 +315,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ### Problème 3 — Lint : apostrophes non échappées
 - **Statut** : RÉSOLU
 - **Correctif** : typographie `'` → `’` dans `admin/ai-team` (7) et `settings` (1).
+
+### Problème 4 — Couche Supabase morte (`api/repository.py`)
+- **Statut** : ✅ SUPPRIMÉE
+- **Cause** : `repository.py` (interfaces `CanonicalStore`/`FileStore`/`SupabaseStore`) n'était importé par aucun module — l'API route directement vers `operations.py`, `menus.py`, `forecast.py`. En outre, `supabase` n'est pas déclaré dans `requirements.txt`.
+- **Correctif** : suppression de `api/repository.py` (aucune référence résiduelle).
 
 ---
 
@@ -323,15 +331,16 @@ Après vérification de bout en bout (endpoints en direct, tests, build, lint, t
 
 1. **Backend** : opérationnel, 36 modèles, endpoints interrogés avec données réelles.
 2. **Frontend** : build de production réussi, 8 routes actives + redirection `/`.
-3. **Tests** : 126/128, les 2 échecs restants sont des incompatibilités de version sklearn (tests).
-4. **Nettoyage** : `/prepare`, `/performance` (et `/savings`, `/procurement`) supprimées → 404.
+3. **Tests** : **128/128** (100 %) — problème sklearn corrigé (venv aligné sur 1.7.2).
+4. **Nettoyage** : `/prepare`, `/performance` (et `/savings`, `/procurement`) supprimées → 404 ;
+   couche Supabase morte (`api/repository.py`) supprimée.
 5. **Intégration** : Backend ↔ Frontend validée (HTTP 200 sur toutes les routes).
 
 ### Recommandations avant production
 - Configurer CORS avec origines explicites (retirer `"*"`).
 - Authentification API, variables d'environnement de production.
 - Stratégie de migration base de données (au-delà du stockage fichier).
-- Aligner la version sklearn (1.7.2) pour écarter les 2 échecs de test résiduels.
+- Commit des changements en cours (rapport, correctif build/lint, sklearn, suppression repository).
 
 ---
 
