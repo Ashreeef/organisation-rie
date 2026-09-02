@@ -29,12 +29,6 @@ export const navSections: NavSection[] = [
         description: 'Plats, catégories et menus',
       },
       {
-        label: 'Approvisionnements',
-        href: '/procurement',
-        icon: 'Package',
-        description: 'Ingrédients, stock et commandes',
-      },
-      {
         label: 'Gaspillage',
         href: '/waste',
         icon: 'Recycle',

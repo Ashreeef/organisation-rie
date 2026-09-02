@@ -11,13 +11,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/shared/section-header';
 import { ForecastChart } from '@/components/shared/forecast-chart';
 import { api } from '@/lib/api';
-import type { ForecastVsActualPoint, ForecastResult, MenuPlan } from '@/lib/types';
-import { findDishByName, DISHES, DISH_CATEGORIES, type Dish } from '@/lib/menu-catalog';
+import type { ForecastVsActualPoint, ForecastResult } from '@/lib/types';
 import { formatNumber, formatPercent } from '@/lib/format';
 import {
-  Users,
-  UtensilsCrossed,
-  ChefHat,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -33,7 +29,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { ServiceStatus, TodayState } from '@/lib/service-store';
+import type { ServiceStatus, TodayState } from '@/lib/types';
 
 /* -------------------------------------------------------------------------- */
 /*  Status helpers                                                             */
@@ -54,7 +50,6 @@ const statusUI: Record<ServiceStatus, { label: string; color: string; bg: string
 export default function DashboardPage() {
   const [forecast, setForecast] = React.useState<ForecastResult | null>(null);
   const [today, setToday] = React.useState<TodayState | null>(null);
-  const [todayMenu, setTodayMenu] = React.useState<MenuPlan | null>(null);
   const [chartData, setChartData] = React.useState<ForecastVsActualPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [hasTodayPlan, setHasTodayPlan] = React.useState(false);
@@ -65,34 +60,28 @@ export default function DashboardPage() {
   const [comment, setComment] = React.useState('');
 
   const refresh = React.useCallback(async () => {
-    const store = api.init();
     const todayDate = new Date().toISOString().slice(0, 10);
+    const todayState = await api.getTodayState();
+    setToday(todayState);
+    setPrepared(todayState.bilan?.prepared?.toString() ?? '');
+    setServed(todayState.bilan?.served?.toString() ?? '');
+    setComment(todayState.bilan?.comment ?? '');
 
     try {
       const plan = await api.getPlannedMenu(todayDate);
-      setTodayMenu(plan);
       const hasPlan = !!plan && [plan.entrees, plan.plat_principal_1, plan.plat_principal_2]
         .some((v) => (v ?? '').toString().trim().length > 0);
       setHasTodayPlan(hasPlan);
       if (!hasPlan) {
         setForecast(null);
         setChartData([]);
-        setToday(api.getTodayState());
-        setPrepared(store.today.bilan?.prepared?.toString() ?? '');
-        setServed(store.today.bilan?.served?.toString() ?? '');
-        setComment(store.today.bilan?.comment ?? '');
         setLoading(false);
         return;
       }
     } catch {
-      setTodayMenu(null);
       setHasTodayPlan(false);
       setForecast(null);
       setChartData([]);
-      setToday(api.getTodayState());
-      setPrepared(store.today.bilan?.prepared?.toString() ?? '');
-      setServed(store.today.bilan?.served?.toString() ?? '');
-      setComment(store.today.bilan?.comment ?? '');
       setLoading(false);
       return;
     }
@@ -102,11 +91,7 @@ export default function DashboardPage() {
       api.getForecastVsActual(14),
     ]);
     setForecast(f);
-    setToday(api.getTodayState());
     setChartData(chart);
-    setPrepared(store.today.bilan?.prepared?.toString() ?? '');
-    setServed(store.today.bilan?.served?.toString() ?? '');
-    setComment(store.today.bilan?.comment ?? '');
     setLoading(false);
   }, []);
 
@@ -131,7 +116,7 @@ export default function DashboardPage() {
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Aucune prévision affichée pour aujourd'hui</h2>
+              <h2 className="text-lg font-semibold text-foreground">Aucune prévision affichée pour aujourd&apos;hui</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Le système n’affiche une recommandation que lorsqu’un menu est bien planifié pour la journée.
                 Saisissez le menu de la semaine dans le planificateur pour obtenir une estimation réaliste.
@@ -164,36 +149,28 @@ export default function DashboardPage() {
   });
 
   const handleStartService = async () => {
-    await api.startService();
-    setToday(api.getTodayState());
+    setToday(await api.startService());
     toast.success('Service démarré');
   };
 
   const handleEndService = async () => {
-    await api.endService();
-    setToday(api.getTodayState());
+    setToday(await api.endService());
     toast.success('Service terminé — saisissez le bilan');
   };
 
   const handleSubmitBilan = async () => {
     if (preparedNum === 0) { toast.error('Veuillez saisir le nombre de repas préparés.'); return; }
-    await api.submitBilanToday({ prepared: preparedNum, served: servedNum, comment: comment || undefined });
-    await api.submitOperation({
-      date: today.date, prepared: preparedNum, served: servedNum, comment: comment || undefined,
-    });
-    setToday(api.getTodayState());
+    setToday(await api.submitBilanToday({ prepared: preparedNum, served: servedNum, comment: comment || undefined }));
     toast.success('Bilan enregistré — vérifiez et confirmez');
   };
 
   const handleConfirmBilan = async () => {
-    await api.confirmBilanToday();
-    setToday(api.getTodayState());
+    setToday(await api.confirmBilanToday());
     toast.success('Journée clôturée');
   };
 
   const handleEditBilan = async () => {
-    await api.editBilanToday();
-    setToday(api.getTodayState());
+    setToday(await api.editBilanToday());
   };
 
   return (
@@ -223,7 +200,6 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Today's forecast (clean, no ML jargon) ─────────── */}
-      <MenuRatioBanner plan={todayMenu} />
       {status !== 'cloturee' && (
         <Card className="border-primary/20 bg-gradient-to-br from-primary/[0.04] to-card p-6">
           <div className="flex items-center justify-between">
@@ -262,47 +238,19 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-
-          <div className="mt-4 rounded-lg bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">{forecast.recommendationNote}</p>
-          </div>
         </Card>
       )}
 
-      {/* ── STATE: Before/during service ───────────────────── */}
-      {(status === 'preparation' || status === 'service') && (
+      {/* ── STATE: Preparation ─────────────────────────────── */}
+      {status === 'preparation' && (
         <Card className="p-6">
-          <SectionHeader
-            title="Aperçu du service"
-            description={status === 'service' ? 'Service en cours — suivi en temps réel' : 'Préparation en cours'}
-          />
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-lg border border-border bg-muted/20 p-4">
-              <Users className="h-5 w-5 text-primary" />
-              <p className="mt-2 text-xs text-muted-foreground">Employés au bureau</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted/20 p-4">
-              <UtensilsCrossed className="h-5 w-5 text-primary" />
-              <p className="mt-2 text-xs text-muted-foreground">Repas à préparer</p>
-              <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(forecast.recommendedMeals)}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-muted/20 p-4">
-              <ChefHat className="h-5 w-5 text-primary" />
-              <p className="mt-2 text-xs text-muted-foreground">Menu recommandé</p>
-              <p className="mt-1 text-sm font-medium text-foreground">
-                {today.menu?.name ?? 'À définir'}
-              </p>
-            </div>
-          </div>
-          {status === 'preparation' && (
-            <Link href="/prepare">
-              <Button variant="outline" className="mt-4 w-full">
-                Préparer demain
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-          )}
+          <SectionHeader title="Préparation du lendemain" />
+          <Link href="/prepare">
+            <Button variant="outline" className="mt-4 w-full">
+              Préparer demain
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </Link>
         </Card>
       )}
 
@@ -458,51 +406,6 @@ export default function DashboardPage() {
 /* -------------------------------------------------------------------------- */
 /*  Sub-components                                                             */
 /* -------------------------------------------------------------------------- */
-
-function MenuRatioBanner({ plan }: { plan: MenuPlan | null }) {
-  let dish: Dish | undefined;
-  if (plan) {
-    dish =
-      DISHES.find((d) => d.id === plan.plat_principal_1_id) ??
-      findDishByName(plan.plat_principal_1 ?? '');
-  }
-  if (!dish) return null;
-
-  const cat = DISH_CATEGORIES.find((c) => c.id === dish!.category);
-  const band = dish.is_premium
-    ? { tone: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', label: 'Journée premium', msg: 'Forte affluence attendue — prévoir une préparation renforcée.' }
-    : dish.ratio_effect === 'très élevé' || dish.ratio_effect === 'élevé'
-      ? { tone: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Journée à forte affluence', msg: 'Participation attendue élevée — préparer au-delà du plat principal.' }
-      : dish.ratio_effect === 'faible'
-        ? { tone: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-200', label: 'Journée calme', msg: 'Participation attendue plus faible — ajuster les quantités pour limiter le gaspillage.' }
-        : null;
-
-  if (!band) return null;
-
-  const ratioPct = (dish.typical_ratio * 100).toFixed(1).replace('.', ',');
-
-  return (
-    <div className={cn('flex items-center gap-3 rounded-lg border p-4', band.bg, band.border)}>
-      <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', band.bg)}>
-        <ChefHat className={cn('h-5 w-5', band.tone)} />
-      </div>
-      <div className="flex-1">
-        <p className={cn('text-sm font-semibold', band.tone)}>
-          {band.label}
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
-            · {dish.name}
-            {cat ? ` · ${cat.label}` : ''}
-          </span>
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{band.msg}</p>
-      </div>
-      <div className="text-right">
-        <p className="text-xs text-muted-foreground">Ratio attendu</p>
-        <p className="text-lg font-bold text-foreground">{ratioPct}%</p>
-      </div>
-    </div>
-  );
-}
 
 function ReviewItem({ label, value }: { label: string; value: string }) {
   return (

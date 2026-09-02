@@ -6,154 +6,127 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/shared/section-header';
 import { api } from '@/lib/api';
-import type { MenuItem } from '@/lib/types';
+import type { MenuPlan } from '@/lib/types';
 import { getDishesByCategory, DISH_CATEGORIES, MENU_STATS } from '@/lib/menu-catalog';
-import { Star, ChefHat, Info } from 'lucide-react';
+import { Info, Salad, ChefHat, Utensils } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const wasteLabels: { threshold: number; label: string; color: string }[] = [
-  { threshold: 5, label: 'Faible', color: 'text-success' },
-  { threshold: 8, label: 'Moyen', color: 'text-warning' },
-  { threshold: 100, label: 'Élevé', color: 'text-destructive' },
+// Ordre réel de la semaine locale BNP : Dimanche → Jeudi
+const WEEKDAYS: { dow: number; label: string }[] = [
+  { dow: 0, label: 'Dimanche' },
+  { dow: 1, label: 'Lundi' },
+  { dow: 2, label: 'Mardi' },
+  { dow: 3, label: 'Mercredi' },
+  { dow: 4, label: 'Jeudi' },
 ];
 
-function getWasteLabel(rate: number) {
-  return wasteLabels.find((w) => rate < w.threshold) ?? wasteLabels[wasteLabels.length - 1];
+function isoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-const popularityLabels: { threshold: number; label: string }[] = [
-  { threshold: 90, label: 'Très apprécié' },
-  { threshold: 80, label: 'Apprécié' },
-  { threshold: 70, label: 'Moyen' },
-  { threshold: 0, label: 'Peu apprécié' },
-];
-
-function getPopularity(rate: number) {
-  return popularityLabels.find((p) => rate >= p.threshold) ?? popularityLabels[popularityLabels.length - 1];
+function isWorkday(dow: number): boolean {
+  return [0, 1, 2, 3, 4].includes(dow);
 }
 
-const weeklyPlan = [
-  { day: 'Dimanche', menuId: 'menu-1' },
-  { day: 'Lundi', menuId: 'menu-2' },
-  { day: 'Mardi', menuId: 'menu-3' },
-  { day: 'Mercredi', menuId: 'menu-4' },
-  { day: 'Jeudi', menuId: 'menu-1' },
-];
+function localWorkWeek(): Date[] {
+  const start = new Date();
+  while (start.getDay() !== 0) {
+    start.setDate(start.getDate() - 1);
+  }
+  start.setHours(0, 0, 0, 0);
+  const out: Date[] = [];
+  const cursor = new Date(start);
+  while (out.length < 5) {
+    if (isWorkday(cursor.getDay())) {
+      out.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
 
 export default function MenusPage() {
-  const [menus, setMenus] = React.useState<MenuItem[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [plans, setPlans] = React.useState<MenuPlan[] | null>(null);
 
   React.useEffect(() => {
-    api.getMenus().then((m) => {
-      setMenus(m);
-      setLoading(false);
-    });
+    const days = localWorkWeek();
+    const first = days[0];
+    const last = days[days.length - 1];
+    api.getPlannedMenus(isoDate(first), isoDate(last)).then(setPlans);
   }, []);
 
-  if (loading) return <Skeleton className="h-96 w-full rounded-lg" />;
+  if (!plans) return <Skeleton className="h-96 w-full rounded-lg" />;
 
-  const menuMap = new Map(menus.map((m) => [m.id, m]));
+  const days = localWorkWeek();
+  const planMap = new Map(plans.map((m) => [m.date, m]));
+
+  const weekRows = days.map((d) => {
+    const plan = planMap.get(isoDate(d));
+    return {
+      dow: d.getDay(),
+      dateLabel: d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+      entrees: plan?.entrees || '',
+      plat1: plan?.plat_principal_1 || '',
+      plat2: plan?.plat_principal_2 || '',
+      planned: !!plan,
+    };
+  });
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Weekly menu table */}
+      {/* Weekly menu table (real planned menus from the planner) */}
       <Card className="p-6">
         <SectionHeader
           title="Menus de la semaine"
-          description="Planning des menus et leurs caractéristiques"
+          description="Planification (Dimanche → Jeudi) enregistrée via le planificateur"
         />
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
                 <th className="pb-3 pr-4 font-medium text-muted-foreground">Jour</th>
-                <th className="pb-3 pr-4 font-medium text-muted-foreground">Menu</th>
-                <th className="pb-3 pr-4 font-medium text-muted-foreground">Popularité</th>
-                <th className="pb-3 pr-4 font-medium text-muted-foreground">Gaspillage habituel</th>
+                <th className="pb-3 pr-4 font-medium text-muted-foreground">Entrées</th>
+                <th className="pb-3 pr-4 font-medium text-muted-foreground">Plat principal</th>
+                <th className="pb-3 pr-4 font-medium text-muted-foreground">Accompagnement / Plat 2</th>
               </tr>
             </thead>
             <tbody>
-              {weeklyPlan.map((entry) => {
-                const menu = menuMap.get(entry.menuId);
-                if (!menu) return null;
-                const waste = getWasteLabel(menu.predictedWaste);
-                const pop = getPopularity(menu.attractiveness);
-                return (
-                  <tr
-                    key={entry.day}
-                    className="border-b border-border/50 transition-colors hover:bg-muted/30"
-                  >
-                    <td className="py-3 pr-4 font-medium text-foreground">{entry.day}</td>
-                    <td className="py-3 pr-4">
-                      <div className="flex items-center gap-2">
-                        {menu.isRecommended && (
-                          <Star className="h-3.5 w-3.5 fill-primary text-primary" />
-                        )}
-                        <span className="font-medium text-foreground">{menu.name}</span>
+              {weekRows.map((row) => (
+                <tr
+                  key={row.dow}
+                  className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                >
+                  <td className="py-3 pr-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center rounded-lg bg-primary/10 px-2.5 py-1.5">
+                        <span className="text-xs font-bold uppercase tracking-wide text-primary">
+                          {(WEEKDAYS.find((w) => w.dow === row.dow)?.label ?? '').slice(0, 3)}
+                        </span>
                       </div>
-                    </td>
-                    <td className="py-3 pr-4 text-muted-foreground">{pop.label}</td>
-                    <td className={cn('py-3 pr-4 font-medium', waste.color)}>
-                      <span className="flex items-center gap-1.5">
-                        <span className={cn('h-2 w-2 rounded-full', waste.color.replace('text-', 'bg-'))} />
-                        {waste.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {WEEKDAYS.find((w) => w.dow === row.dow)?.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{row.dateLabel}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4 text-muted-foreground">{row.entrees || '—'}</td>
+                  <td className="py-3 pr-4 text-foreground">{row.plat1 || '—'}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">{row.plat2 || '—'}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
-      </Card>
-
-      {/* All menus as cards */}
-      <Card className="p-6">
-        <SectionHeader
-          title="Tous les menus"
-          description={`${menus.length} menus disponibles`}
-        />
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {menus.map((menu) => {
-            const waste = getWasteLabel(menu.predictedWaste);
-            const pop = getPopularity(menu.attractiveness);
-            return (
-              <div
-                key={menu.id}
-                className={cn(
-                  'rounded-lg border bg-card p-5 transition-shadow hover:shadow-md',
-                  menu.isRecommended ? 'border-primary/40 ring-1 ring-primary/20' : 'border-border'
-                )}
-              >
-                {menu.isRecommended && (
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-primary">
-                    <Star className="h-3.5 w-3.5 fill-primary" />
-                    Recommandé
-                  </div>
-                )}
-                <p className="text-sm font-semibold text-foreground">{menu.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{menu.description}</p>
-                <div className="mt-4 space-y-2 border-t border-border pt-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <ChefHat className="h-3.5 w-3.5" /> Popularité
-                    </span>
-                    <span className="font-medium text-foreground">{pop.label}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      Gaspillage
-                    </span>
-                    <span className={cn('flex items-center gap-1.5 font-medium', waste.color)}>
-                      <span className={cn('h-2 w-2 rounded-full', waste.color.replace('text-', 'bg-'))} />
-                      {waste.label}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {weekRows.every((r) => !r.planned) && (
+            <p className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              Aucun menu enregistré pour cette semaine. Utilisez le
+              planificateur pour renseigner les menus (Dimanche → Jeudi).
+            </p>
+          )}
         </div>
       </Card>
 
@@ -201,13 +174,27 @@ export default function MenusPage() {
             );
           })}
         </div>
-        <div className="mt-5 flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-          <Info className="h-3.5 w-3.5 shrink-0" />
-          <p>
-            Ce catalogue (en lecture seule) est la source de vérité unique partagée avec le pipeline
-            de features (<code>build_menu_features</code>) et le planificateur de menus. Le pourcentage
-            indique le ratio de participation attendu, et le badge sa bande.
-          </p>
+        <div className="mt-5 flex flex-wrap items-start gap-4 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Salad className="h-3.5 w-3.5 shrink-0" />
+            <span>Entrées</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <ChefHat className="h-3.5 w-3.5 shrink-0" />
+            <span>Plat principal</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Utensils className="h-3.5 w-3.5 shrink-0" />
+            <span>Accompagnement</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Info className="h-3.5 w-3.5 shrink-0" />
+            <p>
+              Ce catalogue (en lecture seule) est la source de vérité unique partagée avec le
+              pipeline de features (<code>build_menu_features</code>) et le planificateur de
+              menus. Le pourcentage indique le ratio de participation attendu, et le badge sa bande.
+            </p>
+          </div>
         </div>
       </Card>
     </div>

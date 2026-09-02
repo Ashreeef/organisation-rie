@@ -3,64 +3,32 @@
 /**
  * API layer — single entry point for all data.
  *
- * Operational data (today/tomorrow/bilan) → service-store (localStorage)
- * Forecast data → FastAPI backend, with mock fallback
- * Charts/history → CSV files (train.csv, submission.csv)
- * Other domains → mock-data.ts
+ * Data source hierarchy (backend single source of truth, mock eliminated):
+ *   - Forecast / model metrics / planned menus → FastAPI backend
+ *   - Daily operations / service lifecycle → FastAPI backend (/api/operations)
+ *   - Charts & history → CSV files (train.csv, submission.csv, test.csv)
+ *   - Dishes & categories → shared catalog (menu-catalog.ts, menu-catalog.json)
  */
 
-import {
-  operationalAlerts,
-  wasteDays,
-  wasteSummary,
-  menuItems,
-  weeklyMenuPlan,
-  procurementItems,
-  procurementSummary,
-  modelMetrics,
-  modelFamilies,
-  dataSources,
-  financialKPIs,
-  reportTemplates,
-} from '@/lib/mock-data';
 import type {
   ForecastResult,
   PlanningInputs,
   KPI,
   ForecastVsActualPoint,
-  OperationalAlert,
   WasteDay,
   WasteSummary,
   MenuItem,
   MenuPlan,
-  ProcurementItem,
-  ProcurementSummary,
   ForecastHistoryEntry,
   ModelMetrics,
   ModelFamily,
   DataSource,
-  FinancialKPI,
   AttendancePoint,
-  ReportTemplate,
-  WasteEntry,
-  Dish,
-  DishCategory,
-  MenuElement,
+  ServiceStatus,
+  TodayState,
+  TomorrowState,
 } from '@/lib/types';
-import {
-  initStore,
-  todayKey,
-  getStatusLabel,
-  setActualMeals,
-  setPlannedMeals,
-  setTodayMenu,
-  submitBilan,
-  confirmBilan,
-  advanceStatus,
-  type ServiceStore,
-  type ServiceStatus,
-  type TodayState,
-} from '@/lib/service-store';
+import { DISHES, DISH_CATEGORIES } from '@/lib/menu-catalog';
 
 /* -------------------------------------------------------------------------- */
 /*  Backend helpers                                                            */
@@ -187,19 +155,110 @@ async function loadForecastBundle(): Promise<ForecastBundle> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Store access (init on first call)                                          */
+/*  Catalog-backed menu options (shared with the ML pipeline)                  */
 /* -------------------------------------------------------------------------- */
 
-let _store: ServiceStore | null = null;
+const catalogMenuItems = (): MenuItem[] => {
+  const catLabel = new Map(DISH_CATEGORIES.map((c) => [c.id, c.label]));
+  return DISHES.map((d) => ({
+    id: `menu-${d.id}`,
+    name: d.name,
+    category: d.is_traditional ? 'traditionnel' : 'international',
+    attractiveness: Math.round(d.typical_ratio * 100),
+    predictedWaste: d.ratio_effect === 'faible' ? 4 : d.ratio_effect === 'élevé' ? 9 : 6.5,
+    costPerMeal: 0,
+    score: Math.round(d.typical_ratio * 100),
+    description: catLabel.get(d.category) ?? 'Catalogue',
+    ingredients: d.aliases.slice(0, 3),
+  }));
+};
 
-function getStore(): ServiceStore {
-  if (!_store) _store = initStore();
-  return _store;
+/* -------------------------------------------------------------------------- */
+/*  Service lifecycle (backend is the single source of truth)                 */
+/* -------------------------------------------------------------------------- */
+
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function updateStore(updater: (s: ServiceStore) => ServiceStore): ServiceStore {
-  _store = updater(getStore());
-  return _store;
+function tomorrowKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function mapStatus(s: string | undefined): ServiceStatus {
+  const allowed: ServiceStatus[] = [
+    'preparation', 'service', 'bilan_a_saisir', 'bilan_a_confirmer', 'cloturee',
+  ];
+  return allowed.includes(s as ServiceStatus) ? (s as ServiceStatus) : 'preparation';
+}
+
+let _today: TodayState | null = null;
+
+function setCachedToday(state: TodayState): TodayState {
+  _today = state;
+  return state;
+}
+
+async function fetchTodayState(): Promise<TodayState> {
+  try {
+    const res = await apiGet<{
+      date: string;
+      status: string;
+      operational: {
+        status?: string;
+        planned_meals?: number;
+        actual_meals?: number;
+        prepared?: number;
+        served?: number;
+        comment?: string | null;
+        bilan?: {
+          date?: string;
+          prepared?: number;
+          served?: number;
+          remaining?: number;
+          wasteRate?: number;
+          comment?: string | null;
+          menu?: { categoryId: string; dishId: string }[];
+          confirmedAt?: string;
+        } | null;
+      } | null;
+    }>('/api/operations/today');
+    const op = res.operational ?? {};
+    const bilan = op.bilan
+      ? {
+          date: op.bilan.date ?? res.date,
+          prepared: op.bilan.prepared ?? 0,
+          served: op.bilan.served ?? 0,
+          remaining: op.bilan.remaining ?? 0,
+          wasteRate: op.bilan.wasteRate ?? 0,
+          comment: op.bilan.comment ?? undefined,
+          menu: op.bilan.menu ?? [],
+          confirmedAt: op.bilan.confirmedAt,
+        }
+      : null;
+    return setCachedToday({
+      date: res.date,
+      status: mapStatus(op.status ?? res.status),
+      forecast: null,
+      plannedMeals: op.planned_meals ?? 0,
+      actualMealsServed: op.actual_meals ?? 0,
+      overrideReason: null,
+      bilan,
+    });
+  } catch {
+    return setCachedToday({
+      date: todayKey(),
+      status: 'preparation',
+      forecast: null,
+      plannedMeals: 0,
+      actualMealsServed: 0,
+      overrideReason: null,
+      bilan: null,
+    });
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -246,10 +305,10 @@ const fallbackForecast = (dateStr: string): ForecastResult => ({
 
 export const api = {
 
-  /* ── Store init ─────────────────────────────────────────── */
+  /* ── Service lifecycle (backend single source of truth) ── */
 
-  init(): ServiceStore {
-    return getStore();
+  async init(): Promise<TodayState> {
+    return fetchTodayState();
   },
 
   /* ── Forecast (from FastAPI backend) ────────────────────── */
@@ -288,117 +347,93 @@ export const api = {
     }
   },
 
-  /* ── Today operations (via service-store) ───────────────── */
+  /* ── Catalog menus (single source of truth: menu-catalog) ─ */
 
-  getTodayState(): TodayState {
-    return getStore().today;
+  getMenus(): Promise<MenuItem[]> { return delay(catalogMenuItems()); },
+
+  /* ── Service lifecycle actions (persisted on the backend) ─ */
+
+  async getTodayState(): Promise<TodayState> {
+    return _today ?? (await fetchTodayState());
   },
 
-  getStatus(): ServiceStatus {
-    return getStore().today.status;
+  async getStatus(): Promise<ServiceStatus> {
+    return (await this.getTodayState()).status;
   },
 
-  getStatusLabel(): string {
-    return getStatusLabel(getStore().today.status);
+  async getStatusLabel(status?: ServiceStatus): Promise<string> {
+    const s = status ?? (await this.getTodayState()).status;
+    const map: Record<ServiceStatus, string> = {
+      preparation: 'En préparation',
+      service: 'Service en cours',
+      bilan_a_saisir: 'Bilan à saisir',
+      bilan_a_confirmer: 'Bilan à confirmer',
+      cloturee: 'Clôturée',
+    };
+    return map[s] ?? s;
   },
 
   async startService(): Promise<TodayState> {
-    updateStore((s) => advanceStatus(s, 'service'));
-    return getStore().today;
+    await apiPost('/api/operations/today/status', { status: 'service' });
+    return fetchTodayState();
   },
 
   async endService(): Promise<TodayState> {
-    updateStore((s) => advanceStatus(s, 'bilan_a_saisir'));
-    return getStore().today;
+    await apiPost('/api/operations/today/status', { status: 'bilan_a_saisir' });
+    return fetchTodayState();
   },
 
   async submitBilanToday(data: { prepared: number; served: number; comment?: string }): Promise<TodayState> {
-    const remaining = Math.max(0, data.prepared - data.served);
-    const wasteRate = data.prepared > 0 ? (remaining / data.prepared) * 100 : 0;
-    updateStore((s) =>
-      submitBilan(s, {
-        date: todayKey(),
-        prepared: data.prepared,
-        served: data.served,
-        remaining,
-        wasteRate: Math.round(wasteRate * 10) / 10,
-        comment: data.comment,
-        menu: [],
-      })
-    );
-    return getStore().today;
+    await apiPost(`/api/operations/${todayKey()}/bilan`, {
+      prepared: data.prepared,
+      served: data.served,
+      menu: [],
+      comment: data.comment ?? null,
+    });
+    return fetchTodayState();
   },
 
   async confirmBilanToday(): Promise<TodayState> {
-    updateStore((s) => confirmBilan(s));
-    return getStore().today;
+    await apiPost(`/api/operations/${todayKey()}/confirm`, {});
+    return fetchTodayState();
   },
 
   async editBilanToday(): Promise<TodayState> {
-    updateStore((s) => advanceStatus(s, 'bilan_a_saisir'));
-    return getStore().today;
+    await apiPost(`/api/operations/${todayKey()}/edit-bilan`, {});
+    return fetchTodayState();
   },
 
-  setActualMealsServed(count: number): void {
-    updateStore((s) => setActualMeals(s, count));
+  async setActualMealsServed(count: number): Promise<TodayState> {
+    await apiPost(`/api/operations/${todayKey()}/planned`, { planned_meals: count });
+    return fetchTodayState();
   },
 
-  /* ── Tomorrow preparation (via service-store) ───────────── */
+  /* ── Tomorrow preparation (backend + forecast) ──────────── */
 
-  async getTomorrowState() {
-    return getStore().tomorrow;
-  },
-
-  async updateTomorrowInputs(patch: { presence?: number; menuId?: string }): Promise<PlanningInputs> {
-    const store = getStore();
-    if (store.tomorrow.locked) {
-      return { expectedPresence: store.tomorrow.presenceInput, selectedMenuId: store.tomorrow.menu?.id ?? '' };
-    }
-    if (patch.presence !== undefined) {
-      updateStore((s) => {
-        const updated = { ...s, tomorrow: { ...s.tomorrow, presenceInput: patch.presence! } };
-        localStorage.setItem('rie-service-store', JSON.stringify(updated));
-        return updated;
-      });
-    }
-    if (patch.menuId) {
-      const menus = menuItems;
-      const selected = menus.find((m) => m.id === patch.menuId) ?? null;
-      updateStore((s) => {
-        const updated = { ...s, tomorrow: { ...s.tomorrow, menu: selected } };
-        localStorage.setItem('rie-service-store', JSON.stringify(updated));
-        return updated;
-      });
-    }
-    return { expectedPresence: getStore().tomorrow.presenceInput, selectedMenuId: getStore().tomorrow.menu?.id ?? '' };
+  async getTomorrowState(): Promise<TomorrowState> {
+    const today = await this.getTodayState();
+    const f = await this.getTomorrowForecast();
+    return {
+      locked: today.status !== 'cloturee',
+      forecast: f,
+      plannedMeals: f.recommendedMeals,
+      presenceInput: f.officePresent,
+    };
   },
 
   async getPlanningInputs(): Promise<PlanningInputs> {
-    const store = getStore();
+    const f = await this.getTomorrowForecast();
     return {
-      expectedPresence: store.tomorrow.presenceInput || 487,
-      selectedMenuId: store.tomorrow.menu?.id ?? menuItems.find((m) => m.isRecommended)?.id ?? '',
+      expectedPresence: f.officePresent,
+      selectedMenuId: catalogMenuItems()[0]?.id ?? '',
     };
   },
 
   async updatePlanningInputs(values: Partial<PlanningInputs>): Promise<PlanningInputs> {
-    const store = getStore();
     if (values.expectedPresence !== undefined) {
-      updateStore((s) => {
-        const updated = { ...s, tomorrow: { ...s.tomorrow, presenceInput: values.expectedPresence! } };
-        localStorage.setItem('rie-service-store', JSON.stringify(updated));
-        return updated;
-      });
+      await apiPost(`/api/operations/${tomorrowKey()}/planned`, { presence: values.expectedPresence });
     }
-    if (values.selectedMenuId) {
-      const selected = menuItems.find((m) => m.id === values.selectedMenuId) ?? null;
-      updateStore((s) => {
-        const updated = { ...s, tomorrow: { ...s.tomorrow, menu: selected } };
-        localStorage.setItem('rie-service-store', JSON.stringify(updated));
-        return updated;
-      });
-    }
-    return { expectedPresence: getStore().tomorrow.presenceInput, selectedMenuId: getStore().tomorrow.menu?.id ?? '' };
+    return this.getPlanningInputs();
   },
 
   /* ── Dashboard KPIs (simplified — no ML jargon) ─────────── */
@@ -471,10 +506,6 @@ export const api = {
     return delay(entries);
   },
 
-  /* ── Alerts ─────────────────────────────────────────────── */
-
-  getAlerts(): Promise<OperationalAlert[]> { return delay(operationalAlerts); },
-
   /* ── Waste (from backend operations) ────────────────────── */
 
   async getWasteDays(): Promise<WasteDay[]> {
@@ -494,7 +525,7 @@ export const api = {
           menu: e.menu?.map((m: { dishId: string }) => m.dishId).join(', ') || 'Non défini',
         }));
     } catch {
-      return wasteDays;
+      return [];
     }
   },
 
@@ -516,25 +547,8 @@ export const api = {
         trend: { direction: 'down', value: `- ${recent.length} jours`, label: 'données réelles' },
       };
     } catch {
-      return wasteSummary;
+      return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
     }
-  },
-  submitWasteEntry(entry: WasteEntry): Promise<{ success: boolean }> {
-    console.log('[mock] Waste entry submitted:', entry);
-    return delay({ success: true });
-  },
-
-  /* ── Menus ──────────────────────────────────────────────── */
-
-  getMenus(): Promise<MenuItem[]> { return delay(menuItems); },
-  getWeeklyMenuPlan(): Promise<{ day: string; menuId: string; menuName: string }[]> { return delay(weeklyMenuPlan); },
-
-  /* ── Procurement ────────────────────────────────────────── */
-
-  getProcurementItems(): Promise<ProcurementItem[]> { return delay(procurementItems); },
-  getProcurementSummary(): Promise<ProcurementSummary> { return delay(procurementSummary); },
-  generateOrder(): Promise<{ orderId: string; totalCost: number }> {
-    return delay({ orderId: `CMD-${Date.now()}`, totalCost: procurementSummary.totalCost });
   },
 
   /* ── Model metrics (AI team page only) ──────────────────── */
@@ -566,7 +580,14 @@ export const api = {
         xgbCount: data.xgb_count,
         calibrationLambda: data.calibration_lambda,
       };
-    } catch { return modelMetrics; }
+    } catch {
+      return {
+        version: '—', lastTrainingDate: '—', lastPredictionDate: '—', evaluationMetric: '—',
+        predictionError: '—', dataFreshness: 'Hors ligne', driftIndicator: 'stable', featureAvailability: 0,
+        accuracy: 0, mae: 0, rmse: 0, asymmetricCost: 0, catboostCount: 0, lgbCount: 0, xgbCount: 0,
+        calibrationLambda: 0,
+      };
+    }
   },
 
   async getModelFamilies(): Promise<ModelFamily[]> {
@@ -580,16 +601,63 @@ export const api = {
         { name: 'XGBoost', modelCount: data.xgb_count, contribution: Math.round(data.xgb_weight * 100), description: `Regularized boosting — seed × alpha variants` },
         { name: 'CatBoost', modelCount: data.catboost_count, contribution: Math.round(data.catboost_weight * 100), description: `Ordered boosting — dominant blend weight` },
       ];
-    } catch { return modelFamilies; }
+    } catch {
+      return [];
+    }
   },
 
-  /* ── Data sources ───────────────────────────────────────── */
+  /* ── Data sources (derived from real model info + CSVs) ─── */
 
-  getDataSources(): Promise<DataSource[]> { return delay(dataSources); },
-
-  /* ── Financial ──────────────────────────────────────────── */
-
-  getFinancialKPIs(): Promise<FinancialKPI> { return delay(financialKPIs); },
+  async getDataSources(): Promise<DataSource[]> {
+    try {
+      const metrics = await api.getModelMetrics();
+      const bundle = await loadForecastBundle();
+      return [
+        {
+          id: 'catalog-menu',
+          name: 'Catalogue des menus (JSON)',
+          status: 'synced',
+          lastSync: 'À jour',
+          records: DISHES.length,
+          freshness: 'fresh',
+          availability: 100,
+          description: 'Source partagée avec le pipeline (menu-catalog.json)',
+        },
+        {
+          id: 'forecast-model',
+          name: `Modèle de prévision ${metrics.version}`,
+          status: 'synced',
+          lastSync: new Date().toISOString().slice(0, 10),
+          records: metrics.catboostCount + metrics.lgbCount + metrics.xgbCount,
+          freshness: 'fresh',
+          availability: 100,
+          description: `MAE ${metrics.mae.toFixed(1)} · RMSE ${metrics.rmse.toFixed(1)} repas`,
+        },
+        {
+          id: 'history-csv',
+          name: 'Historique (CSV)',
+          status: 'synced',
+          lastSync: 'À jour',
+          records: bundle.points.length,
+          freshness: 'fresh',
+          availability: 100,
+          description: 'Données d\'entraînement et de soumission',
+        },
+        {
+          id: 'operations-backend',
+          name: 'Opérations journalières (API)',
+          status: 'synced',
+          lastSync: 'En ligne',
+          records: 0,
+          freshness: 'fresh',
+          availability: 100,
+          description: 'Bilans saisis via le backend',
+        },
+      ];
+    } catch {
+      return [];
+    }
+  },
 
   /* ── Attendance ─────────────────────────────────────────── */
 
@@ -604,14 +672,6 @@ export const api = {
       ratio: p.expectedPresence > 0 ? p.predictedMeals / p.expectedPresence : 0,
     }));
     return delay(points);
-  },
-
-  /* ── Reports ────────────────────────────────────────────── */
-
-  getReportTemplates(): Promise<ReportTemplate[]> { return delay(reportTemplates); },
-  generateReport(reportId: string): Promise<{ url: string }> {
-    console.log('[mock] Report generated:', reportId);
-    return delay({ url: `#mock-report-${reportId}` });
   },
 
   /* ── Planned menus (weekly planning) ───────────────────── */
@@ -649,9 +709,6 @@ export const api = {
   },
 
   async regenerateFeatures(): Promise<{ ok: boolean; message?: string }> {
-    // Déclenche la régénération des features après modification des menus.
-    // Le backend peut exposer POST /api/menus/regenerate s'il est configuré ;
-    // sinon on documente que la tâche quotidienne s'en charge.
     return { ok: true, message: 'La tâche quotidienne régénérera les features. Pour un résultat immédiat, exécutez : python -m src.forecasting.daily_features --days 14' };
   },
 
@@ -668,7 +725,7 @@ export const api = {
     }
   },
 
-  async submitOperation(entry: { date: string; prepared: number; served: number; comment?: string; menu?: MenuElement[] }): Promise<{ success: boolean }> {
+  async submitOperation(entry: { date: string; prepared: number; served: number; comment?: string; menu?: { categoryId: string; dishId: string }[] }): Promise<{ success: boolean }> {
     try {
       const remaining = Math.max(0, entry.prepared - entry.served);
       const wasteRate = entry.prepared > 0 ? (remaining / entry.prepared) * 100 : 0;
@@ -687,54 +744,5 @@ export const api = {
       console.error('Failed to submit operation:', err);
       return { success: false };
     }
-  },
-
-  /* ── Dishes & categories ────────────────────────────────── */
-
-  getDishes(): Promise<Dish[]> {
-    const defaultDishes: Dish[] = [
-      { id: 'dish-salade', name: 'Salade / Soupe', categoryId: 'entree', active: true },
-      { id: 'dish-escalope', name: 'Escalope grillée', categoryId: 'plat-principal', active: true },
-      { id: 'dish-escalope-panne', name: 'Escalope pannée sauce piquante', categoryId: 'plat-principal', active: true },
-      { id: 'dish-puree', name: 'Pomme purée', categoryId: 'accompagnement', active: true },
-      { id: 'dish-spaghetti', name: 'Spaghetti bolognaise', categoryId: 'plat-principal', active: true, historicalPopularity: 81, wasteRate: 7.8 },
-      { id: 'dish-poulet', name: 'Poulet rôti', categoryId: 'plat-principal', active: true, historicalPopularity: 92, wasteRate: 4.2 },
-      { id: 'dish-rechta', name: 'Rechta', categoryId: 'accompagnement', active: true, historicalPopularity: 90, wasteRate: 4.2 },
-    ];
-    return delay(defaultDishes);
-  },
-
-  getDishCategories(): Promise<DishCategory[]> {
-    const defaultCategories: DishCategory[] = [
-      { id: 'entree', name: 'Entrée' },
-      { id: 'plat-principal', name: 'Plat principal' },
-      { id: 'accompagnement', name: 'Accompagnement' },
-      { id: 'dessert', name: 'Dessert' },
-      { id: 'soupe', name: 'Soupe' },
-      { id: 'salade', name: 'Salade' },
-      { id: 'boisson', name: 'Boisson' },
-      { id: 'autre', name: 'Autre' },
-    ];
-    return delay(defaultCategories);
-  },
-
-  addDish(dish: Omit<Dish, 'id' | 'active' | 'isNew'>): Promise<Dish> {
-    return delay({ ...dish, id: `dish-${Date.now()}`, active: true, isNew: true });
-  },
-
-  addDishCategory(name: string): Promise<DishCategory> {
-    return delay({ id: `category-${Date.now()}`, name: name.trim() });
-  },
-
-  getDailyMenu(): Promise<MenuElement[]> {
-    return delay([
-      { categoryId: 'entree', dishId: 'dish-salade' },
-      { categoryId: 'plat-principal', dishId: 'dish-escalope' },
-      { categoryId: 'accompagnement', dishId: 'dish-puree' },
-    ]);
-  },
-
-  saveDailyMenu(items: MenuElement[]): Promise<MenuElement[]> {
-    return delay(items);
   },
 };

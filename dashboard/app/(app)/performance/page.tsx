@@ -9,8 +9,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  LineChart,
-  Line,
   Legend,
 } from 'recharts';
 import { Card } from '@/components/ui/card';
@@ -19,39 +17,29 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SectionHeader } from '@/components/shared/section-header';
 import { KPIWidget } from '@/components/shared/kpi-widget';
 import { api } from '@/lib/api';
-import type { FinancialKPI, AttendancePoint, KPI } from '@/lib/types';
-import { formatNumber, formatDZD } from '@/lib/format';
+import type { AttendancePoint, KPI } from '@/lib/types';
+import { formatNumber } from '@/lib/format';
 import { CheckCircle2, TrendingDown } from 'lucide-react';
 
 export default function PerformancePage() {
-  const [financial, setFinancial] = React.useState<FinancialKPI | null>(null);
   const [attendance, setAttendance] = React.useState<AttendancePoint[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [range, setRange] = React.useState<'7' | '14' | '30'>('14');
 
   React.useEffect(() => {
-    Promise.all([api.getFinancialKPIs(), api.getAttendanceData()]).then(
-      ([f, a]) => {
-        setFinancial(f);
-        setAttendance(a);
-        setLoading(false);
-      }
-    );
-  }, []);
-
-  React.useEffect(() => {
     api.getAttendanceData().then((data) => {
       setAttendance(data.slice(-Number(range)));
+      setLoading(false);
     });
   }, [range]);
 
-  if (loading || !financial) return <Skeleton className="h-96 w-full rounded-lg" />;
+  if (loading) return <Skeleton className="h-96 w-full rounded-lg" />;
 
   const totalMeals = attendance.reduce((s, a) => s + a.meals, 0);
   const avgRatio = attendance.length > 0
     ? attendance.reduce((s, a) => s + a.ratio, 0) / attendance.length
     : 0;
-  const avgWasteRate = 5.4;
+
   const managementKPIs: KPI[] = [
     {
       id: 'meals-served',
@@ -69,34 +57,12 @@ export default function PerformancePage() {
       trend: { direction: 'flat', value: 'Moyenne', label: 'bureau → cantine' },
       variant: 'default',
     },
-    {
-      id: 'savings',
-      label: 'Gaspillage moyen estimé',
-      value: avgWasteRate.toFixed(1).replace('.', ','),
-      unit: '%',
-      trend: { direction: 'down', value: '-1,8 pts', label: 'vs planification manuelle' },
-      variant: 'success',
-    },
-    {
-      id: 'avoided-waste',
-      label: 'Gaspillage évité',
-      value: '2,1',
-      unit: 'pts',
-      trend: { direction: 'up', value: '+2,1 pts', label: 'vs méthodes précédentes' },
-      variant: 'success',
-    },
   ];
 
   const chartData = attendance.map((a) => ({
     shortDate: a.shortDate,
     officePresent: a.officePresent,
     meals: a.meals,
-  }));
-
-  const savingsData = financial.monthlyTrend.map((m) => ({
-    month: m.month,
-    savings: m.savings,
-    wasteCost: m.wasteCost,
   }));
 
   return (
@@ -169,44 +135,6 @@ export default function PerformancePage() {
         </div>
       </Card>
 
-      {/* Savings trend */}
-      <Card className="p-6">
-        <SectionHeader
-          title="Évolution des économies et du coût du gaspillage"
-          description="Tendance sur 6 mois"
-        />
-        <div className="mt-4">
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={savingsData} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
-                tickLine={false}
-                axisLine={false}
-                width={60}
-              />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: 8,
-                  border: '1px solid hsl(var(--border))',
-                  fontSize: 12,
-                }}
-                formatter={(value: number) => formatDZD(value)}
-              />
-              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-              <Line type="monotone" dataKey="savings" name="Économies" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="wasteCost" name="Coût du gaspillage" stroke="hsl(var(--destructive))" strokeWidth={2.5} dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-
       {/* Waste reduction */}
       <Card className="p-6">
         <SectionHeader
@@ -216,20 +144,20 @@ export default function PerformancePage() {
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-lg border border-border bg-muted/20 p-4">
             <TrendingDown className="h-5 w-5 text-success" />
-            <p className="mt-2 text-sm font-semibold text-foreground">Tendance mensuelle</p>
+            <p className="mt-2 text-sm font-semibold text-foreground">Tendance récente</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Le taux de gaspillage a diminué de 1,8 points par rapport au mois précédent.
+              Le suivi du gaspillage permet d&apos;ajuster les quantités préparées.
             </p>
           </div>
           <div className="rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-sm font-semibold text-foreground">Coût évité</p>
-            <p className="mt-1 text-2xl font-bold text-success">{formatDZD(financial.avoidedWaste)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Gaspillage évité ce mois</p>
+            <p className="text-sm font-semibold text-foreground">Jours suivis</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">{attendance.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Période de suivi</p>
           </div>
           <div className="rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-sm font-semibold text-foreground">Coût actuel du gaspillage</p>
-            <p className="mt-1 text-2xl font-bold text-destructive">{formatDZD(financial.wasteCost)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Ce mois</p>
+            <p className="text-sm font-semibold text-foreground">Participation moyenne</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">{(avgRatio * 100).toFixed(1).replace('.', ',')}%</p>
+            <p className="mt-1 text-xs text-muted-foreground">Bureau → cantine</p>
           </div>
         </div>
       </Card>

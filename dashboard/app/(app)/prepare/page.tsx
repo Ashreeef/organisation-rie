@@ -22,7 +22,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
-import type { ForecastResult, MenuItem, ProcurementItem } from '@/lib/types';
+import type { ForecastResult, MenuItem } from '@/lib/types';
 import { formatNumber } from '@/lib/format';
 import {
   Users,
@@ -31,7 +31,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Pencil,
-  Star,
   TrendingDown,
   Check,
   Lock,
@@ -77,22 +76,22 @@ export default function PreparePage() {
   }, [isEditing, hasOverridden]);
 
   React.useEffect(() => {
-    const store = api.init();
-    const isClosed = store.today.status === 'cloturee';
-    setTodayClosed(isClosed);
+    (async () => {
+      const today = await api.getTodayState();
+      setTodayClosed(today.status === 'cloturee');
 
-    Promise.all([
-      api.getTomorrowForecast(),
-      api.getMenus(),
-      api.getPlanningInputs(),
-    ]).then(([f, m, planning]) => {
+      const [f, m, planning] = await Promise.all([
+        api.getTomorrowForecast(),
+        api.getMenus(),
+        api.getPlanningInputs(),
+      ]);
       setForecast(f);
       setMenus(m);
       setMealCount(f.recommendedMeals);
       setPresenceInput(planning.expectedPresence || f.officePresent);
       setSelectedMenuId(planning.selectedMenuId);
       setLoading(false);
-    });
+    })();
   }, []);
 
   React.useEffect(() => {
@@ -328,7 +327,6 @@ export default function PreparePage() {
               {menus.map((m) => (
                 <SelectItem key={m.id} value={m.id}>
                   {m.name}
-                  {m.isRecommended ? ' — recommandé' : ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -342,12 +340,6 @@ export default function PreparePage() {
                     <p className="text-base font-semibold text-foreground">
                       {selectedMenu.name}
                     </p>
-                    {selectedMenu.isRecommended && (
-                      <span className="flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                        <Star className="h-3 w-3 fill-primary" />
-                        Recommandé
-                      </span>
-                    )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {selectedMenu.description}

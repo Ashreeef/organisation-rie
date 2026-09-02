@@ -91,25 +91,6 @@ export interface MenuItem {
   score: number;
   description: string;
   ingredients: string[];
-  isRecommended?: boolean;
-}
-
-export interface ProcurementItem {
-  id: string;
-  ingredient: string;
-  quantityRequired: number;
-  unit: string;
-  currentStock: number;
-  quantityToOrder: number;
-  supplier: string;
-  estimatedCost: number;
-  status: 'en-stock' | 'a-commander' | 'commande' | 'livre';
-}
-
-export interface ProcurementSummary {
-  totalItems: number;
-  totalCost: number;
-  itemsToOrder: number;
 }
 
 export interface ForecastHistoryEntry {
@@ -161,14 +142,6 @@ export interface DataSource {
   description: string;
 }
 
-export interface FinancialKPI {
-  estimatedSavings: number;
-  wasteCost: number;
-  avoidedWaste: number;
-  foodCost: number;
-  monthlyTrend: { month: string; savings: number; wasteCost: number }[];
-}
-
 export interface AttendancePoint {
   date: string;
   shortDate: string;
@@ -178,20 +151,17 @@ export interface AttendancePoint {
   ratio: number;
 }
 
-export interface ReportTemplate {
-  id: string;
-  name: string;
-  description: string;
-  frequency: string;
-  format: 'PDF' | 'CSV' | 'XLSX';
-}
-
 export type ServiceStatus =
-  | 'upcoming'
-  | 'in_progress'
-  | 'awaiting_closure'
-  | 'confirmation_required'
-  | 'closed';
+  | 'preparation'
+  | 'service'
+  | 'bilan_a_saisir'
+  | 'bilan_a_confirmer'
+  | 'cloturee';
+
+export interface MenuElement {
+  categoryId: string;
+  dishId: string;
+}
 
 export interface BilanRecord {
   date: string;
@@ -204,6 +174,23 @@ export interface BilanRecord {
   confirmedAt?: string;
 }
 
+export interface TodayState {
+  date: string; // YYYY-MM-DD
+  status: ServiceStatus;
+  forecast: ForecastResult | null;
+  plannedMeals: number;
+  actualMealsServed: number;
+  overrideReason: string | null;
+  bilan: BilanRecord | null;
+}
+
+export interface TomorrowState {
+  locked: boolean;
+  forecast: ForecastResult | null;
+  plannedMeals: number;
+  presenceInput: number;
+}
+
 export interface OperationalEntry {
   id: string;
   date: string;
@@ -213,35 +200,6 @@ export interface OperationalEntry {
   menu: string;
   status: string;
   bilan?: BilanRecord | null;
-}
-
-export interface DishCategory {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-export interface Dish {
-  id: string;
-  name: string;
-  categoryId: string;
-  description?: string;
-  portionStandard?: string;
-  estimatedCost?: number;
-  historicalPopularity?: number;
-  wasteRate?: number;
-  active: boolean;
-  isNew?: boolean;
-}
-
-export interface MenuElement {
-  categoryId: string;
-  dishId: string;
-}
-
-export interface DailyMenu {
-  date: string;
-  items: MenuElement[];
 }
 
 export interface MenuPlan {
@@ -271,17 +229,6 @@ export interface ServiceDay {
 export interface DailyCycle {
   service: ServiceDay;
   tomorrowUnlocked: boolean;
-}
-
-export interface WasteEntry {
-  date: string;
-  prepared: number;
-  served: number;
-  remaining: number;
-  wasted: number;
-  wasteRate: number;
-  menu: string;
-  comment?: string;
 }
 
 export interface NavItem {
