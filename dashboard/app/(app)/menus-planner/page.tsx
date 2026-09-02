@@ -263,56 +263,61 @@ export default function MenusPlannerPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 animate-fade-in">
-      {/* ── En-tête ─────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg bg-primary/10 p-2 text-primary">
-            <CalendarDays className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Planification hebdomadaire</h1>
-            <p className="text-sm text-muted-foreground">
-              Semaine de travail (Dimanche → Jeudi) · {weekStartLabel}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-4">
-          {[
-            { step: '1', title: 'Menu', text: 'Choisir les repas de la semaine' },
-            { step: '2', title: 'Vérif', text: 'Contrôler chaque jour' },
-            { step: '3', title: 'Sauvegarde', text: 'Enregistrer la semaine' },
-            { step: '4', title: 'Prévision', text: 'Préparer les 7 jours' },
-          ].map((item) => (
-            <div key={item.step} className="rounded-xl border border-border bg-card p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary">
-                  {item.step}
-                </span>
-                <span className="text-sm font-semibold text-foreground">{item.title}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">{item.text}</p>
+    <div className="mx-auto max-w-6xl space-y-5 animate-fade-in">
+      {/* ── En-tête + actions ───────────────────────────────── */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <CalendarDays className="h-6 w-6" />
             </div>
-          ))}
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Planification hebdomadaire</h1>
+              <p className="text-sm text-muted-foreground">
+                Semaine de travail (Dimanche → Jeudi) · {weekStartLabel}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button variant="outline" size="sm" onClick={handleRegenerate}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Générer les prévisions
+            </Button>
+            <Button
+              onClick={saveAll}
+              disabled={savingAll}
+              size="sm"
+            >
+              {savingAll
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <Save className="mr-2 h-4 w-4" />}
+              Enregistrer la semaine
+            </Button>
+          </div>
         </div>
+        {lastRegen && (
+          <p className="mt-3 text-xs text-muted-foreground">{lastRegen}</p>
+        )}
       </div>
 
-      {/* ── Actions ─────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={saveAll} disabled={savingAll} size="lg">
-          {savingAll
-            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            : <Save className="mr-2 h-4 w-4" />}
-          Enregistrer la semaine
-        </Button>
-        <Button variant="outline" size="lg" onClick={handleRegenerate}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Générer les prévisions
-        </Button>
-        {lastRegen && (
-          <span className="text-xs text-muted-foreground">{lastRegen}</span>
-        )}
+      {/* ── Étapes ──────────────────────────────────────────── */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { step: '1', title: 'Menu', text: 'Choisir les repas de la semaine' },
+          { step: '2', title: 'Vérif', text: 'Contrôler chaque jour' },
+          { step: '3', title: 'Sauvegarde', text: 'Enregistrer la semaine' },
+          { step: '4', title: 'Prévision', text: 'Préparer les 7 jours' },
+        ].map((item) => (
+          <div key={item.step} className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary">
+              {item.step}
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-foreground">{item.title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{item.text}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* ── Les 5 jours ouvrés (Dimanche → Jeudi) ────────── */}
@@ -327,17 +332,27 @@ export default function MenusPlannerPage() {
             <Card
               key={day.date}
               className={cn(
-                'border-border p-5 transition-colors',
-                day.saved && 'border-success/30 bg-success/[0.03]',
+                'overflow-hidden border-border shadow-sm transition-colors',
+                day.saved && 'border-success/30',
               )}
             >
               {/* En-tête du jour */}
-              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border/60 bg-muted/25 px-5 py-3.5',
+                  day.saved && 'bg-success/[0.06]',
+                )}
+              >
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center rounded-lg bg-primary/10 px-3 py-2">
-                    <span className="text-sm font-bold uppercase tracking-wide text-primary">
-                      {dowLabel.slice(0, 3)}
-                    </span>
+                  <div
+                    className={cn(
+                      'flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold',
+                      day.saved
+                        ? 'bg-success/15 text-success'
+                        : 'bg-primary/10 text-primary',
+                    )}
+                  >
+                    {dowLabel.slice(0, 3)}
                   </div>
                   <div>
                     <p className="text-base font-semibold leading-tight text-foreground">
@@ -347,31 +362,34 @@ export default function MenusPlannerPage() {
                   </div>
                 </div>
 
-                {day.saved && (
-                  <span className="flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
-                    <Check className="h-3 w-3" /> Enregistré
-                  </span>
-                )}
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => saveDay(idx)}
-                  disabled={day.loading}
-                >
-                  {day.loading
-                    ? <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    : <Save className="mr-1 h-3 w-3" />}
-                  {day.saved ? 'Mettre à jour' : 'Enregistrer'}
-                </Button>
+                <div className="ml-auto flex items-center gap-2.5">
+                  {day.saved && (
+                    <span className="flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-xs font-medium text-success">
+                      <Check className="h-3 w-3" /> Enregistré
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => saveDay(idx)}
+                    disabled={day.loading}
+                  >
+                    {day.loading
+                      ? <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      : <Save className="mr-1 h-3 w-3" />}
+                    {day.saved ? 'Mettre à jour' : 'Enregistrer'}
+                  </Button>
+                </div>
               </div>
 
               {/* Champs du jour — 3 colonnes sur écran large */}
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="space-y-1.5">
+              <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-3">
+                <div className="space-y-2 rounded-lg border border-border/60 bg-card p-3 transition-colors focus-within:border-primary/40">
                   <Label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Salad className="h-3.5 w-3.5" /> Entrées
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                      <Salad className="h-3.5 w-3.5" />
+                    </span>
+                    Entrées
                   </Label>
                   <DishPicker
                     options={ENTREE_OPTIONS}
@@ -385,9 +403,12 @@ export default function MenusPlannerPage() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2 rounded-lg border border-border/60 bg-card p-3 transition-colors focus-within:border-primary/40">
                   <Label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <ChefHat className="h-3.5 w-3.5" /> Plat principal
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                      <ChefHat className="h-3.5 w-3.5" />
+                    </span>
+                    Plat principal
                   </Label>
                   <DishPicker
                     options={DISH_OPTIONS}
@@ -405,9 +426,12 @@ export default function MenusPlannerPage() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2 rounded-lg border border-border/60 bg-card p-3 transition-colors focus-within:border-primary/40">
                   <Label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Utensils className="h-3.5 w-3.5" /> Accompagnement / Plat 2
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                      <Utensils className="h-3.5 w-3.5" />
+                    </span>
+                    Accompagnement / Plat 2
                     <span className="font-normal text-muted-foreground/70">(optionnel)</span>
                   </Label>
                   <DishPicker
@@ -432,16 +456,21 @@ export default function MenusPlannerPage() {
       </div>
 
       {/* ── Note pédagogique ────────────────────────────────── */}
-      <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-        <p>
-          Les plats principaux proviennent du catalogue canonique unifié (
-          <code>menu-catalog.json</code>) partagé avec le pipeline{' '}
-          <code>build_menu_features</code>. Chaque plat affiche la bande de ratio
-          attendue. Vous pouvez aussi saisir un texte libre — il est rapproché du
-          catalogue à l&apos;enregistrement, et l&apos;identifiant canonique est conservé pour
-          un mapping exact à l&apos;inférence.
-        </p>
+      <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Info className="h-4 w-4" />
+        </span>
+        <div className="space-y-1.5 text-xs leading-relaxed">
+          <p className="font-medium text-foreground">À propos du catalogue</p>
+          <p>
+            Les plats principaux proviennent du catalogue canonique unifié (
+            <code>menu-catalog.json</code>) partagé avec le pipeline{' '}
+            <code>build_menu_features</code>. Chaque plat affiche la bande de ratio
+            attendue. Vous pouvez aussi saisir un texte libre — il est rapproché du
+            catalogue à l&apos;enregistrement, et l&apos;identifiant canonique est conservé pour
+            un mapping exact à l&apos;inférence.
+          </p>
+        </div>
       </div>
     </div>
   );

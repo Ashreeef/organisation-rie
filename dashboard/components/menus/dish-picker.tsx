@@ -94,7 +94,7 @@ export function DishPicker({
           aria-expanded={open}
           disabled={disabled}
           className={cn(
-            'h-9 w-full justify-between font-normal',
+            'h-10 w-full justify-between font-normal',
             !selected && !value && 'text-muted-foreground',
             className,
           )}
