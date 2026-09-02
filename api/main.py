@@ -24,7 +24,7 @@ Usage:
 """
 import time
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -39,6 +39,9 @@ from .models import (
     HealthResponse,
     BlendScores,
     MenuPlan,
+    LifecycleStatusUpdate,
+    PlannedMealsUpdate,
+    BilanSubmission,
 )
 from .forecast import predict_today, get_model_info
 from .operations import get_today_entry, save_entry, get_all_entries
@@ -156,6 +159,98 @@ def list_operations():
     """List all operational entries."""
     entries = get_all_entries()
     return [OperationalEntry(**e) for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# Service lifecycle (single source of truth on the backend)
+# ---------------------------------------------------------------------------
+
+def _today_or_new(day: Optional[str] = None) -> dict:
+    if day is None:
+        day = date.today().isoformat()
+    entry = get_today_entry(day)
+    if entry is None:
+        entry = OperationalEntry(date=day).model_dump()
+    else:
+        entry = OperationalEntry(**entry).model_dump()
+    return entry
+
+
+@app.post("/api/operations/today/status", response_model=OperationalEntry)
+def update_lifecycle_status(req: LifecycleStatusUpdate):
+    """Avance le cycle de service du jour (preparation/service/bilan/cloturee)."""
+    allowed = {"preparation", "service", "bilan_a_saisir", "bilan_a_confirmer", "cloturee"}
+    if req.status not in allowed:
+        raise HTTPException(status_code=422, detail=f"Statut invalide: {req.status}")
+    entry = _today_or_new()
+    entry["status"] = req.status
+    if req.status == "cloturee":
+        entry["confirmed_at"] = datetime.now().isoformat()
+    return OperationalEntry(**save_entry(entry))
+
+
+@app.post("/api/operations/{day}/planned", response_model=OperationalEntry)
+def update_planned(day: str, req: PlannedMealsUpdate):
+    """Enregistre la planification du jour/demain (repas prévus, présence, menu)."""
+    entry = _today_or_new(day)
+    if req.planned_meals is not None:
+        entry["planned_meals"] = req.planned_meals
+    if req.presence is not None:
+        entry["presence"] = req.presence
+    if req.forecast is not None:
+        entry["forecast"] = req.forecast
+    if req.menu is not None:
+        entry["menu"] = req.menu
+    return OperationalEntry(**save_entry(entry))
+
+
+@app.post("/api/operations/{day}/bilan", response_model=OperationalEntry)
+def submit_bilan(day: str, req: BilanSubmission):
+    """Enregistre le bilan (preparés/servis) et passe à l'état 'bilan_a_confirmer'."""
+    entry = _today_or_new(day)
+    prepared = req.prepared
+    served = req.served
+    remaining = max(0, prepared - served)
+    waste_rate = round((remaining / prepared) * 100, 1) if prepared > 0 else 0.0
+    entry.update({
+        "prepared": prepared,
+        "served": served,
+        "remaining": remaining,
+        "waste": remaining,
+        "waste_rate": waste_rate,
+        "bilan": {
+            "date": day,
+            "prepared": prepared,
+            "served": served,
+            "remaining": remaining,
+            "wasteRate": waste_rate,
+            "comment": req.comment,
+            "menu": req.menu or [],
+        },
+        "status": "bilan_a_confirmer",
+    })
+    if req.menu is not None:
+        entry["menu"] = req.menu
+    if req.comment is not None:
+        entry["comment"] = req.comment
+    return OperationalEntry(**save_entry(entry))
+
+
+@app.post("/api/operations/{day}/confirm", response_model=OperationalEntry)
+def confirm_bilan(day: str):
+    """Confirme le bilan et clôture la journée."""
+    entry = _today_or_new(day)
+    entry["status"] = "cloturee"
+    entry["confirmed_at"] = datetime.now().isoformat()
+    return OperationalEntry(**save_entry(entry))
+
+
+@app.post("/api/operations/{day}/edit-bilan", response_model=OperationalEntry)
+def edit_bilan(day: str):
+    """Rouvre le bilan pour édition (retour à 'bilan_a_saisir')."""
+    entry = _today_or_new(day)
+    entry["status"] = "bilan_a_saisir"
+    return OperationalEntry(**save_entry(entry))
 
 
 @app.get("/api/model/metrics", response_model=ModelMetricsResponse)

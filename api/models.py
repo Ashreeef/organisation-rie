@@ -30,15 +30,46 @@ class TodayForecastRequest(BaseModel):
 
 
 class OperationalEntry(BaseModel):
+    """Operational entry for a single service day.
+
+    Serves as the single source of truth for the daily service lifecycle:
+    preparation → service → bilan_a_saisir → bilan_a_confirmer → cloturee.
+    """
     date: str
-    prepared: int
-    served: int
+    status: str = "preparation"
+    prepared: int = 0
+    served: int = 0
     remaining: int = 0
     waste: int = 0
     waste_rate: float = 0.0
+    planned_meals: int = 0
+    actual_meals: int = 0
+    presence: int = 0
+    forecast: int = 0
     menu: list[dict] = []
+    bilan: dict = {}
     comment: Optional[str] = None
     modified_at: Optional[str] = None
+    confirmed_by: Optional[str] = None
+    confirmed_at: Optional[str] = None
+
+
+class LifecycleStatusUpdate(BaseModel):
+    status: str
+
+
+class PlannedMealsUpdate(BaseModel):
+    planned_meals: Optional[int] = None
+    presence: Optional[int] = None
+    forecast: Optional[int] = None
+    menu: Optional[list[dict]] = None
+
+
+class BilanSubmission(BaseModel):
+    prepared: int = 0
+    served: int = 0
+    menu: Optional[list[dict]] = None
+    comment: Optional[str] = None
 
 
 class OperationalResponse(BaseModel):
