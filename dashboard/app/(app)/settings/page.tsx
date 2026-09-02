@@ -64,7 +64,7 @@ export default function SettingsPage() {
               <Globe className="h-5 w-5 text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium text-foreground">Langue</p>
-                <p className="text-xs text-muted-foreground">Langue d'interface</p>
+                <p className="text-xs text-muted-foreground">Langue d’interface</p>
               </div>
             </div>
             <Select value={language} onValueChange={setLanguage}>

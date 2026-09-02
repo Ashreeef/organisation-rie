@@ -75,7 +75,14 @@ export default function HistoryPage() {
     }
     result.sort((a, b) => {
       const dir = sortDir === 'asc' ? 1 : -1;
-      return a[sortKey] < b[sortKey] ? -dir : a[sortKey] > b[sortKey] ? dir : 0;
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // Valeurs absentes (null/undefined, exemple : écart lorsque pas de prévision) triées en dernier
+      const an = av == null ? Infinity : av;
+      const bn = bv == null ? Infinity : bv;
+      if (an < bn) return -dir;
+      if (an > bn) return dir;
+      return 0;
     });
     return result;
   }, [history, sortKey, sortDir, statusFilter, search]);

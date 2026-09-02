@@ -74,11 +74,11 @@ export default function AITeamPage() {
         <AlertTriangle className="h-5 w-5 shrink-0 text-warning" />
         <div>
           <p className="text-sm font-semibold text-foreground">
-            Section technique — Réservée à l'équipe IA
+            Section technique — Réservée à l’équipe IA
           </p>
           <p className="text-xs text-muted-foreground">
             Cette section contient les détails techniques du système de prévision.
-            Les utilisateurs opérationnels n'ont pas besoin d'accéder à ces informations.
+            Les utilisateurs opérationnels n’ont pas besoin d’accéder à ces informations.
           </p>
         </div>
       </div>
@@ -141,7 +141,7 @@ export default function AITeamPage() {
               </p>
             </div>
             <div className="rounded-lg border border-border bg-muted/30 p-4">
-              <p className="text-xs text-muted-foreground">Métrique d'évaluation</p>
+              <p className="text-xs text-muted-foreground">Métrique d’évaluation</p>
               <p className="mt-1 text-lg font-semibold text-foreground">
                 {metrics.evaluationMetric} = {metrics.predictionError}
               </p>
@@ -260,13 +260,13 @@ export default function AITeamPage() {
         <SectionHeader title="Détails techniques" />
         <Accordion type="single" collapsible className="mt-4">
           <AccordionItem value="features">
-            <AccordionTrigger>Variables d'entrée (features)</AccordionTrigger>
+            <AccordionTrigger>Variables d’entrée (features)</AccordionTrigger>
             <AccordionContent>
               <ul className="space-y-1.5 text-sm text-muted-foreground">
                 <li>• Informations calendaires (jour de semaine, semaine, mois)</li>
                 <li>• Jours fériés et événements spéciaux</li>
                 <li>• Période Ramadan et fêtes religieuses</li>
-                <li>• Présence au bureau (contrôle d'accès)</li>
+                <li>• Présence au bureau (contrôle d’accès)</li>
                 <li>• Prévisions météo (température, conditions)</li>
                 <li>• Caractéristiques des menus (target encoding)</li>
                 <li>• Lag features (7j, 14j, 28j)</li>
@@ -288,7 +288,7 @@ export default function AITeamPage() {
             </AccordionContent>
           </AccordionItem>
           <AccordionItem value="training">
-            <AccordionTrigger>Stratégie d'entraînement</AccordionTrigger>
+            <AccordionTrigger>Stratégie d’entraînement</AccordionTrigger>
             <AccordionContent>
               <p className="text-sm text-muted-foreground">
                 Validation par TimeSeriesSplit (5 folds, gap=7j). Les modèles sont entraînés
