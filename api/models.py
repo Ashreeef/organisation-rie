@@ -12,15 +12,17 @@ class BlendScores(BaseModel):
 
 class TodayForecast(BaseModel):
     date: str
-    office_present: int
-    predicted_ratio: float
-    employees_count: int
-    blend_scores: BlendScores
-    recommended_meals: int
-    confidence_lower: int
-    confidence_upper: int
-    confidence_level: str
-    recommendation_note: str
+    forecast_available: bool = True
+    unavailable_reason: Optional[str] = None
+    office_present: int = 0
+    predicted_ratio: float = 0.0
+    employees_count: int = 0
+    blend_scores: BlendScores = BlendScores(lgb=0.0, xgb=0.0, catboost=0.0)
+    recommended_meals: int = 0
+    confidence_lower: int = 0
+    confidence_upper: int = 0
+    confidence_level: str = "low"
+    recommendation_note: str = ""
 
 
 class TodayForecastRequest(BaseModel):

@@ -85,21 +85,46 @@ def health():
 def forecast_today():
     """Get today's prediction from the trained cascade model."""
     today = date.today().isoformat()
-    try:
-        result = predict_today(target_date=today)
-        return _to_forecast_model(result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
+    return _forecast_for_date(today)
 
 
 @app.post("/api/forecast", response_model=TodayForecast)
 def forecast_date(req: TodayForecastRequest):
-    """Get prediction for a specific date."""
+    """Get prediction for a specific date (only if its menu is planned)."""
     target = req.date or date.today().isoformat()
+    return _forecast_for_date(target, office_present=req.office_present)
+
+
+def _has_menu(date_str: str) -> bool:
+    """Un menu est-il planifié pour cette date ? (source de vérité backend)."""
+    menu = get_menu(date_str)
+    if menu is None:
+        return False
+    return any((menu.get(c) or "").strip()
+               for c in ("entrees", "plat_principal_1", "plat_principal_2"))
+
+
+def _unavailable_forecast(date_str: str) -> TodayForecast:
+    return TodayForecast(
+        date=date_str,
+        forecast_available=False,
+        unavailable_reason="Le menu de cette journée n'est pas renseigné.",
+    )
+
+
+def _forecast_for_date(date_str: str, office_present: Optional[int] = None) -> TodayForecast:
+    """Retourne la prévision pour une date — mais uniquement si un menu est planifié.
+
+    La prévision dépend du menu (features texte → intensité → ratio). Sans menu,
+    il n'y a pas de prévision valide : on renvoie un état explicite
+    ``forecast_available=False`` plutôt qu'un calcul tiré de nulle part.
+    """
+    if not _has_menu(date_str):
+        return _unavailable_forecast(date_str)
     try:
         result = predict_today(
-            target_date=target,
-            office_present=req.office_present,
+            target_date=date_str,
+            office_present=office_present,
         )
         return _to_forecast_model(result)
     except Exception as e:
@@ -126,12 +151,12 @@ def _to_forecast_model(data: dict) -> TodayForecast:
 def operations_today():
     """Get today's operational data + forecast."""
     today = date.today().isoformat()
-    forecast = predict_today(target_date=today)
+    forecast = _forecast_for_date(today)
     operational = get_today_entry(today)
     return OperationalResponse(
         date=today,
         status="active",
-        forecast=_to_forecast_model(forecast),
+        forecast=forecast,
         operational=OperationalEntry(**operational) if operational else None,
     )
 
