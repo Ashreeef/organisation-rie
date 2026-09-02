@@ -37,17 +37,6 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    title: 'Management',
-    items: [
-      {
-        label: 'Performance',
-        href: '/performance',
-        icon: 'TrendingUp',
-        description: 'Vue d’ensemble pour le management',
-      },
-    ],
-  },
-  {
     title: 'Autre',
     items: [
       {

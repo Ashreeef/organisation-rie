@@ -51,16 +51,6 @@ export const noForecast = (date: string, reason?: string | null): ForecastResult
   recommendationNote: '',
 });
 
-export interface KPI {
-  id: string;
-  label: string;
-  value: string;
-  unit?: string;
-  trend?: Trend;
-  icon?: string;
-  variant?: 'default' | 'success' | 'warning' | 'destructive';
-}
-
 export interface ForecastVsActualPoint {
   date: string;
   shortDate: string;
@@ -145,15 +135,6 @@ export interface DataSource {
   freshness: 'fresh' | 'stale' | 'stale-warning';
   availability: number;
   description: string;
-}
-
-export interface AttendancePoint {
-  date: string;
-  shortDate: string;
-  officePresent: number;
-  employeesCount: number;
-  meals: number;
-  ratio: number;
 }
 
 export type ServiceStatus =

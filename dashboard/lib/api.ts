@@ -12,7 +12,6 @@
 
 import type {
   ForecastResult,
-  KPI,
   ForecastVsActualPoint,
   WasteDay,
   WasteSummary,
@@ -21,7 +20,6 @@ import type {
   ModelMetrics,
   ModelFamily,
   DataSource,
-  AttendancePoint,
   ServiceStatus,
   TodayState,
 } from '@/lib/types';
@@ -348,47 +346,6 @@ export const api = {
     });
   },
 
-  /* ── Dashboard KPIs (simplified — no ML jargon) ─────────── */
-
-  async getDashboardKPIs(): Promise<KPI[]> {
-    const f = await api.getTodayForecast();
-    const kpis: KPI[] = [
-      {
-        id: 'expected-presence',
-        label: 'Employés au bureau',
-        value: `${f.officePresent}`,
-        unit: 'employés',
-        trend: { direction: 'flat', value: 'Aujourd\'hui', label: 'fréquentation prévue' },
-        variant: 'default',
-      },
-      {
-        id: 'recommended-meals',
-        label: 'Repas à préparer',
-        value: `${f.recommendedMeals}`,
-        unit: 'repas',
-        trend: { direction: 'up', value: '+4%', label: 'marge de sécurité' },
-        variant: 'success',
-      },
-      {
-        id: 'avg-waste',
-        label: 'Taux de participation',
-        value: `${(f.predictedRatio * 100).toFixed(1).replace('.', ',')}`,
-        unit: '%',
-        trend: { direction: 'flat', value: 'Prévision', label: 'participation bureau → cantine' },
-        variant: 'default',
-      },
-      {
-        id: 'estimated-savings',
-        label: 'Repas prévus',
-        value: `${f.employeesCount}`,
-        unit: 'repas',
-        trend: { direction: 'flat', value: 'Calibré', label: 'après calibration DOW' },
-        variant: 'default',
-      },
-    ];
-    return delay(kpis);
-  },
-
   /* ── Chart data (from live operational records) ─────────── */
 
   async getForecastVsActual(days: 7 | 14 | 30 = 14): Promise<ForecastVsActualPoint[]> {
@@ -663,29 +620,6 @@ export const api = {
           description: 'Bilans, prévisions et gaspillage — source de vérité unique',
         },
       ];
-    } catch {
-      return [];
-    }
-  },
-
-  /* ── Attendance (from live operational records) ─────────── */
-
-  async getAttendanceData(): Promise<AttendancePoint[]> {
-    try {
-      const entries = await apiGet<{
-        date: string; served?: number; forecast?: number; presence?: number;
-      }[]>('/api/operations');
-      const points: AttendancePoint[] = entries
-        .filter((e) => (e.served ?? 0) > 0 || (e.presence ?? 0) > 0)
-        .map((e) => ({
-          date: e.date,
-          shortDate: formatShortDate(e.date),
-          officePresent: e.presence ?? 0,
-          employeesCount: e.forecast ?? 0,
-          meals: e.served ?? 0,
-          ratio: (e.presence ?? 0) > 0 ? (e.served ?? 0) / (e.presence ?? 0) : 0,
-        }));
-      return delay(points);
     } catch {
       return [];
     }

@@ -11,7 +11,6 @@ import {
   Package,
   Recycle,
   History,
-  TrendingUp,
   Settings,
   CalendarDays,
   ChevronLeft,
@@ -27,7 +26,6 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Package,
   Recycle,
   History,
-  TrendingUp,
   Settings,
   CalendarDays,
 };
