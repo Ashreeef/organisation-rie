@@ -4,9 +4,9 @@ pandas==2.2.2
 scipy==1.13.0
 
 # Modeling
-scikit-learn==1.7.2  # aligné avec les pickle transformeurs (créés sous 1.7.2)
+scikit-learn==1.7.2
 lightgbm==4.3.0
-xgboost==2.0.3
+xgboost==3.1.2 
 optuna==3.6.1
 
 # Menu / text features
