@@ -175,6 +175,13 @@ export interface TodayState {
   actualMealsServed: number;
   overrideReason: string | null;
   bilan: BilanRecord | null;
+  // True quand le bilan du jour est clos (statut 'cloturee'). Source unique :
+  // backend (calculé depuis le statut). L'UI ne dérive jamais ceci d'un CSS.
+  bilanClosed: boolean;
+  // Prochaine journée de service (dimanche -> jeudi ; vendredi/samedi exclus).
+  // Fournie par le backend (calendrier opérationnel canonique). L'UI ne fait
+  // PAS de "date + 1 jour" pour la calculer.
+  nextOperationalDay: string;
 }
 
 export interface OperationalEntry {

@@ -60,6 +60,10 @@ from src.calendar_utils import (  # noqa: E402
     islamic_holiday_dates,
     ramadan_ranges,
 )
+from src.operational_calendar import (  # noqa: E402
+    is_operational_day,
+    next_operational_day,
+)
 from src.menu_optimization.menu_catalog_py import (  # noqa: E402
     build_menu_features,
     apply_menu_text_features,
@@ -948,6 +952,22 @@ def _fill_live_nans(target_df: pd.DataFrame, history: pd.DataFrame) -> pd.DataFr
     return target_df
 
 
+def _next_operational_dates(start, n: int):
+    """Renvoie les ``n`` prochaines journées de service (dimanche → jeudi) à
+    partir de ``start`` (incluse si opérationnelle), en sautant vendredi/samedi.
+
+    Calendrier opérationnel canonique (``src.operational_calendar``) : on ne
+    construit jamais de date cible un jour non travaillé.
+    """
+    out = []
+    cursor = pd.Timestamp(start).normalize()
+    while len(out) < n:
+        if is_operational_day(cursor):
+            out.append(cursor)
+        cursor = cursor + pd.Timedelta(days=1)
+    return out
+
+
 def generate_features(
     target_dates=None,
     days: int = 14,
@@ -969,7 +989,10 @@ def generate_features(
 
     today = pd.Timestamp.today().normalize()
     if target_dates is None:
-        target_dates = pd.date_range(today, periods=days, freq="D")
+        # Seules les journées de service (dimanche → jeudi) sont des dates
+        # cibles valides — calendrier opérationnel canonique. On ne génère
+        # JAMAIS de features pour un vendredi/samedi (jours non travaillés).
+        target_dates = _next_operational_dates(today, days)
     target_dates = pd.DatetimeIndex(sorted(pd.DatetimeIndex(pd.to_datetime(list(target_dates)))))
 
     office_preds = roll_office_forward(history, target_dates)

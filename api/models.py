@@ -81,6 +81,12 @@ class OperationalResponse(BaseModel):
     status: str
     forecast: Optional[TodayForecast] = None
     operational: Optional[OperationalEntry] = None
+    # Le bilan du jour est-il clos ? (source unique : statut 'cloturee')
+    bilan_closed: bool = False
+    # Prochaine journée de service (dimanche -> jeudi ; vendredi/samedi exclus).
+    # Calculée côté backend par le calendrier opérationnel canonique — l'UI ne
+    # doit jamais faire de "date + 1 jour" pour la dériver.
+    next_operational_day: str = ""
 
 
 class ModelMetricsResponse(BaseModel):

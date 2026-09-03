@@ -52,6 +52,7 @@ from .forecast import (
 )
 from .operations import get_today_entry, save_entry, get_all_entries
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
+from src.operational_calendar import iso_next_operational_day
 
 app = FastAPI(
     title="RIE BNP Paribas Forecasting API",
@@ -188,11 +189,18 @@ def operations_today():
     today = date.today().isoformat()
     forecast = _forecast_for_date(today)
     operational = get_today_entry(today)
+    entry = OperationalEntry(**operational) if operational else None
     return OperationalResponse(
         date=today,
         status="active",
         forecast=forecast,
-        operational=OperationalEntry(**operational) if operational else None,
+        operational=entry,
+        # Source unique de vérité (calendrier opérationnel canonique) :
+        # le bilan est clos uniquement quand le statut vaut 'cloturee'.
+        bilan_closed=bool(entry and entry.status == "cloturee"),
+        # Prochaine journée de service (dimanche -> jeudi ; jamais vendredi/
+        # samedi). L'UI n'a pas à recalculer ceci.
+        next_operational_day=iso_next_operational_day(today),
     )
 
 

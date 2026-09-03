@@ -10,49 +10,18 @@ import type { MenuPlan } from '@/lib/types';
 import { getDishesByCategory, DISH_CATEGORIES, MENU_STATS } from '@/lib/menu-catalog';
 import { Info, Salad, ChefHat, Utensils } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// Ordre réel de la semaine locale BNP : Dimanche → Jeudi
-const WEEKDAYS: { dow: number; label: string }[] = [
-  { dow: 0, label: 'Dimanche' },
-  { dow: 1, label: 'Lundi' },
-  { dow: 2, label: 'Mardi' },
-  { dow: 3, label: 'Mercredi' },
-  { dow: 4, label: 'Jeudi' },
-];
-
-function isoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function isWorkday(dow: number): boolean {
-  return [0, 1, 2, 3, 4].includes(dow);
-}
-
-function localWorkWeek(): Date[] {
-  const start = new Date();
-  while (start.getDay() !== 0) {
-    start.setDate(start.getDate() - 1);
-  }
-  start.setHours(0, 0, 0, 0);
-  const out: Date[] = [];
-  const cursor = new Date(start);
-  while (out.length < 5) {
-    if (isWorkday(cursor.getDay())) {
-      out.push(new Date(cursor));
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return out;
-}
+import {
+  isoDate,
+  isWorkdayDow,
+  OPERATIONAL_WEEKDAYS,
+  operationalWeekDays,
+} from '@/lib/operational-calendar';
 
 export default function MenusPage() {
   const [plans, setPlans] = React.useState<MenuPlan[] | null>(null);
 
   React.useEffect(() => {
-    const days = localWorkWeek();
+    const days = operationalWeekDays(new Date());
     const first = days[0];
     const last = days[days.length - 1];
     api.getPlannedMenus(isoDate(first), isoDate(last)).then(setPlans);
@@ -60,7 +29,7 @@ export default function MenusPage() {
 
   if (!plans) return <Skeleton className="h-96 w-full rounded-lg" />;
 
-  const days = localWorkWeek();
+  const days = operationalWeekDays(new Date());
   const planMap = new Map(plans.map((m) => [m.date, m]));
 
   const weekRows = days.map((d) => {
@@ -103,12 +72,12 @@ export default function MenusPage() {
                     <div className="flex items-center gap-3">
                       <div className="flex items-center justify-center rounded-lg bg-primary/10 px-2.5 py-1.5">
                         <span className="text-xs font-bold uppercase tracking-wide text-primary">
-                          {(WEEKDAYS.find((w) => w.dow === row.dow)?.label ?? '').slice(0, 3)}
+                          {(OPERATIONAL_WEEKDAYS.find((w) => w.dow === row.dow)?.label ?? '').slice(0, 3)}
                         </span>
                       </div>
                       <div>
                         <p className="font-medium text-foreground">
-                          {WEEKDAYS.find((w) => w.dow === row.dow)?.label}
+                          {OPERATIONAL_WEEKDAYS.find((w) => w.dow === row.dow)?.label}
                         </p>
                         <p className="text-xs text-muted-foreground">{row.dateLabel}</p>
                       </div>

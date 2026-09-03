@@ -92,9 +92,17 @@ class TestPredictTodayCalendarOnly:
         assert res["predicted_ratio"] == pytest.approx(0.61 * 0.50, abs=1e-6)
         assert "Jour ferie" in res["recommendation_note"]
 
-    def test_weekend_note(self):
+    def test_non_operational_day_note(self):
+        # Samedi 2026-09-05 (jour NON travaillé dans le calendrier opérationnel
+        # dimanche→jeudi ; vendredi/samedi exclus) → note "Jour non travaillé".
         res = f.predict_today("2026-09-05", office_present=300)
-        assert "Weekend" in res["recommendation_note"]
+        assert "Jour non travaillé" in res["recommendation_note"]
+
+    def test_operational_day_no_non_working_note(self):
+        # Dimanche 2026-09-06 est une journée de service → ne doit PAS être
+        # marqué "Jour non travaillé" (seuls vendredi/samedi le sont).
+        res = f.predict_today("2026-09-06", office_present=300)
+        assert "Jour non travaillé" not in res["recommendation_note"]
 
     def test_office_dow_fallback_deterministic(self):
         # Bundle de repli : dow_mean_actual {6:310, 0:295, 1:290, 2:300, 3:298}

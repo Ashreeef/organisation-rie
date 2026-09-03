@@ -123,6 +123,8 @@ async function fetchTodayState(): Promise<TodayState> {
     const res = await apiGet<{
       date: string;
       status: string;
+      bilan_closed?: boolean;
+      next_operational_day?: string;
       operational: {
         status?: string;
         planned_meals?: number;
@@ -163,6 +165,10 @@ async function fetchTodayState(): Promise<TodayState> {
       actualMealsServed: op.actual_meals ?? 0,
       overrideReason: null,
       bilan,
+      // Fourni par le backend (source unique) : bilan clos + prochaine journée
+      // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
+      bilanClosed: Boolean(res.bilan_closed),
+      nextOperationalDay: res.next_operational_day || todayKey(),
     });
   } catch {
     return setCachedToday({
@@ -173,6 +179,8 @@ async function fetchTodayState(): Promise<TodayState> {
       actualMealsServed: 0,
       overrideReason: null,
       bilan: null,
+      bilanClosed: false,
+      nextOperationalDay: todayKey(),
     });
   }
 }
@@ -256,12 +264,11 @@ export const api = {
     }
   },
 
-  async getTomorrowForecast(): Promise<ForecastResult> {
-    // The forecast is ALWAYS fetched for a specific, explicit date. There is
-    // deliberately no fallback that reuses today's numbers: if the backend
-    // reports forecast_available=false (no menu for tomorrow), we surface that
-    // exact state rather than inventing a forecast.
-    const dateStr = tomorrowKey();
+  // Prévision pour une date explicite (ex. prochaine journée de service).
+  // Aucun fallback qui emprunte les chiffres d'une autre date : si le backend
+  // indique forecast_available=false (pas de menu planifié pour cette date),
+  // on renvoie exactement cet état au lieu d'inventer une prévision.
+  async getForecastForDate(dateStr: string): Promise<ForecastResult> {
     try {
       const data = await apiPost<{
         date: string; forecast_available?: boolean; unavailable_reason?: string | null;
@@ -274,10 +281,17 @@ export const api = {
       }>('/api/forecast', { date: dateStr });
       return mapBackendForecast(data);
     } catch {
-      // Backend unreachable: report that no forecast can be determined, without
-      // borrowing another date's numbers.
+      // Backend injoignable : signaler qu'aucune prévision ne peut être
+      // déterminée, sans emprunter les chiffres d'une autre date.
       return noForecast(dateStr, 'Backend indisponible — prévision temporairement inaccessible.');
     }
+  },
+
+  async getTomorrowForecast(): Promise<ForecastResult> {
+    // Rétrocompatibilité : calcule la prévision pour "demain". La page
+    // dashboard doit utiliser getForecastForDate(today.nextOperationalDay)
+    // (fourni par le backend) plutôt que ce helper.
+    return this.getForecastForDate(tomorrowKey());
   },
 
   /* ── Service lifecycle actions (persisted on the backend) ─ */

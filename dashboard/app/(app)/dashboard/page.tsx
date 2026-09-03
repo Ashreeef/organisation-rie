@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/shared/section-header';
 import { ForecastChart } from '@/components/shared/forecast-chart';
 import { api } from '@/lib/api';
-import type { ForecastVsActualPoint, ForecastResult } from '@/lib/types';
+import type { ForecastVsActualPoint, ForecastResult, MenuPlan } from '@/lib/types';
 import { formatNumber, formatPercent } from '@/lib/format';
 import {
   CheckCircle2,
@@ -26,6 +26,7 @@ import {
   StopCircle,
   ClipboardCheck,
   RefreshCcw,
+  Utensils,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -44,16 +45,40 @@ const statusUI: Record<ServiceStatus, { label: string; color: string; bg: string
 };
 
 /* -------------------------------------------------------------------------- */
+/*  Menu helpers — single source of truth = planned_menus (GET /api/menus)     */
+/* -------------------------------------------------------------------------- */
+
+// Un menu est "renseigné" dès qu'au moins un champ non vide est planifié.
+function menuHasContent(menu: MenuPlan | null | undefined): boolean {
+  if (!menu) return false;
+  return [menu.entrees, menu.plat_principal_1, menu.plat_principal_2]
+    .some((v) => (v ?? '').toString().trim().length > 0);
+}
+
+// Représentation compacte du menu (champs non vides, joints par " · ").
+function menuLabel(menu: MenuPlan | null | undefined): string {
+  if (!menu) return '';
+  return [menu.entrees, menu.plat_principal_1, menu.plat_principal_2]
+    .map((v) => (v ?? '').toString().trim())
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
 export default function DashboardPage() {
   const [forecast, setForecast] = React.useState<ForecastResult | null>(null);
-  const [tomorrowForecast, setTomorrowForecast] = React.useState<ForecastResult | null>(null);
+  const [nextForecast, setNextForecast] = React.useState<ForecastResult | null>(null);
   const [today, setToday] = React.useState<TodayState | null>(null);
   const [chartData, setChartData] = React.useState<ForecastVsActualPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [hasTodayPlan, setHasTodayPlan] = React.useState(false);
+  // Menus du jour / de la prochaine journée — même source de vérité que
+  // /menus-planner (GET /api/menus/{date}) : menu → features → prévision.
+  const [todayMenu, setTodayMenu] = React.useState<MenuPlan | null>(null);
+  const [nextMenu, setNextMenu] = React.useState<MenuPlan | null>(null);
 
   // Bilan form
   const [prepared, setPrepared] = React.useState('');
@@ -68,24 +93,42 @@ export default function DashboardPage() {
     setServed(todayState.bilan?.served?.toString() ?? '');
     setComment(todayState.bilan?.comment ?? '');
 
-    // Tomorrow's forecast is always fetched for the explicit tomorrow date.
-    // It carries its own forecastAvailable flag (backend gate: menu required).
-    const tomorrow = await api.getTomorrowForecast();
-    setTomorrowForecast(tomorrow);
+    // ── Prochaine journée de service ─────────────────────────────
+    // Elle n'est montrée qu'UNE FOIS le bilan du jour clos. Sa date est fournie
+    // par le backend (calendrier opérationnel canonique : dimanche→jeudi,
+    // vendredi/samedi exclus) — l'UI ne fait PAS de "date + 1 jour" pour la
+    // calculer. Avant la clôture, on n'affiche que les informations du jour.
+    const closed = todayState.bilanClosed;
+    const nextDayStr = todayState.nextOperationalDay;
 
-    try {
-      const plan = await api.getPlannedMenu(todayDate);
-      const hasPlan = !!plan && [plan.entrees, plan.plat_principal_1, plan.plat_principal_2]
-        .some((v) => (v ?? '').toString().trim().length > 0);
-      setHasTodayPlan(hasPlan);
-      if (!hasPlan) {
-        setForecast(null);
-        setChartData([]);
-        setLoading(false);
-        return;
+    if (closed) {
+      // Un menu absent (404) → null → "non renseigné".
+      let plan: MenuPlan | null = null;
+      try {
+        plan = await api.getPlannedMenu(nextDayStr);
+      } catch {
+        plan = null;
       }
+      setNextMenu(plan);
+      const nextFc = await api.getForecastForDate(nextDayStr);
+      setNextForecast(nextFc);
+    } else {
+      setNextMenu(null);
+      setNextForecast(null);
+    }
+
+    // ── Menu du jour (même source que /menus-planner) ────────────
+    let dayPlan: MenuPlan | null = null;
+    try {
+      dayPlan = await api.getPlannedMenu(todayDate);
     } catch {
-      setHasTodayPlan(false);
+      dayPlan = null;
+    }
+    setTodayMenu(dayPlan);
+    const hasPlan = !!dayPlan && [dayPlan.entrees, dayPlan.plat_principal_1, dayPlan.plat_principal_2]
+      .some((v) => (v ?? '').toString().trim().length > 0);
+    setHasTodayPlan(hasPlan);
+    if (!hasPlan) {
       setForecast(null);
       setChartData([]);
       setLoading(false);
@@ -133,16 +176,18 @@ export default function DashboardPage() {
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Aucune prévision affichée pour aujourd&apos;hui</h2>
+              <h2 className="text-lg font-semibold text-foreground">Menu du jour non renseigné</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Le système n’affiche une recommandation que lorsqu’un menu est bien planifié pour la journée.
-                Saisissez le menu de la semaine dans le planificateur pour obtenir une estimation réaliste.
+                Aucune prévision pour aujourd&apos;hui : le système n’affiche de recommandation
+                que lorsqu’un menu est planifié pour la journée. Renseignez le menu dans le
+                planificateur pour obtenir une estimation réaliste.
               </p>
               <div className="mt-4">
                 <Link href="/menus-planner">
                   <Button variant="outline">
-                    Ouvrir le planificateur
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <Utensils className="mr-2 h-4 w-4" />
+                    Planifier le menu du jour
+                    <ArrowRight className="ml-1 h-4 w-4" />
                   </Button>
                 </Link>
               </div>
@@ -165,11 +210,13 @@ export default function DashboardPage() {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 
-  const tomorrowDate = new Date();
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowLabel = tomorrowDate.toLocaleDateString('fr-FR', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
+  // Prochaine journée de service — date fournie par le backend (calendrier
+  // opérationnel canonique), jamais un "date + 1 jour" codé en dur ici.
+  const nextDayLabel = today.nextOperationalDay
+    ? new Date(`${today.nextOperationalDay}T00:00:00`).toLocaleDateString('fr-FR', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      })
+    : '';
 
   const handleStartService = async () => {
     setToday(await api.startService());
@@ -241,6 +288,16 @@ export default function DashboardPage() {
               Fiabilité : {forecast.confidenceLevel === 'high' ? 'Élevée' : forecast.confidenceLevel === 'medium' ? 'Moyenne' : 'Faible'}
             </span>
           </div>
+
+          {menuHasContent(todayMenu) && (
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-primary/15 bg-primary/5 px-4 py-3">
+              <Utensils className="h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-primary">Menu du jour</p>
+                <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{menuLabel(todayMenu)}</p>
+              </div>
+            </div>
+          )}
 
           <div className="mt-6 grid grid-cols-3 gap-6 text-center">
             <div>
@@ -366,66 +423,95 @@ export default function DashboardPage() {
               </div>
             </Card>
           )}
+        </>
+      )}
 
-          {/* Tomorrow preview (unlocked) — always for the explicit tomorrow date.
-              Shows the forecast only if a menu is planned for tomorrow. */}
-          <Card className="p-6">
+      {/* ── Prochaine journée de service (uniquement après clôture du bilan du jour) ── */}
+      {status === 'cloturee' && (
+        <Card className="p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <SectionHeader
-              title="Demain"
-              description={`${tomorrowLabel}${tomorrowForecast?.forecastAvailable ? ' — prévision disponible' : ''}`}
+              title="Prochaine journée de service"
+              description={`${nextDayLabel}${menuHasContent(nextMenu) && nextForecast?.forecastAvailable ? ' — prévision disponible' : ''}`}
             />
-            {tomorrowForecast?.forecastAvailable ? (
-              <>
-                {tomorrowForecast?.forecastStale ? (
-                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-3 text-sm">
-                    <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              Préparation
+            </span>
+          </div>
+
+          {menuHasContent(nextMenu) ? (
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              {/* Menu prévu */}
+              <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+                <Utensils className="h-5 w-5 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Menu prévu</p>
+                  <p className="mt-0.5 truncate text-sm font-semibold text-foreground">{menuLabel(nextMenu)}</p>
+                </div>
+              </div>
+
+              {/* Prévision (uniquement si un menu est planifié) */}
+              {nextForecast?.forecastAvailable ? (
+                <div className="rounded-lg border border-primary/20 bg-gradient-to-br from-primary/[0.04] to-card px-4 py-3">
+                  {nextForecast?.forecastStale ? (
+                    <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50/70 p-3 text-sm">
+                      <RefreshCcw className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <div>
+                        <p className="font-semibold text-amber-800">Prévision à actualiser</p>
+                        <p className="text-muted-foreground">
+                          Le menu de la prochaine journée a changé depuis la dernière prévision. Recalculez les features.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
                     <div>
-                      <p className="font-semibold text-amber-800">Prévision à actualiser</p>
-                      <p className="text-muted-foreground">
-                        Le menu de demain a changé depuis la dernière prévision. Recalculez les features
-                        pour actualiser cette prévision.
+                      <p className="text-xs font-medium uppercase tracking-wide text-primary">Prévision</p>
+                      <p className="mt-0.5 text-2xl font-bold text-primary">{formatNumber(nextForecast.recommendedMeals)} repas</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {formatNumber(nextForecast.officePresent)} présents · {(nextForecast.predictedRatio * 100).toFixed(1).replace('.', ',')}% participation
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fiabilité</p>
+                      <p className={cn(
+                        'mt-0.5 text-sm font-semibold',
+                        nextForecast.confidenceLevel === 'high' ? 'text-green-700' :
+                        nextForecast.confidenceLevel === 'medium' ? 'text-amber-700' : 'text-red-700'
+                      )}>
+                        {nextForecast.confidenceLevel === 'high' ? 'Élevée' : nextForecast.confidenceLevel === 'medium' ? 'Moyenne' : 'Faible'}
                       </p>
                     </div>
                   </div>
-                ) : null}
-                <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Employés au bureau</p>
-                    <p className="mt-1 text-2xl font-bold text-foreground">{formatNumber(tomorrowForecast.officePresent)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-primary">Repas recommandés</p>
-                    <p className="mt-1 text-3xl font-bold text-primary">{formatNumber(tomorrowForecast.recommendedMeals)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Taux participation</p>
-                    <p className="mt-1 text-2xl font-bold text-foreground">
-                      {(tomorrowForecast.predictedRatio * 100).toFixed(1).replace('.', ',')}%
-                    </p>
-                  </div>
                 </div>
-              </>
-            ) : (
-              <div className="mt-4">
-                <div className="flex items-start gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-4">
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                  <div>
-                    <p className="font-semibold text-foreground">Prévision indisponible</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Veuillez d’abord renseigner le menu de demain pour obtenir une prévision.
-                    </p>
-                  </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50/50 px-4 py-3 text-sm text-muted-foreground">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                  Menu planifié mais prévision non disponible — actualisez les features.
                 </div>
-                <Link href="/menus-planner">
-                  <Button className="mt-4 w-full" variant="outline">
-                    Planifier le menu de demain
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-semibold text-foreground">Menu non renseigné</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Renseignez le menu de la prochaine journée de service pour obtenir une prévision.
+                  </p>
+                </div>
               </div>
-            )}
-          </Card>
-        </>
+              <Link href="/menus-planner">
+                <Button variant="outline" size="sm">
+                  <Utensils className="mr-2 h-4 w-4" />
+                  Planifier le menu de la prochaine journée
+                  <ArrowRight className="ml-1 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          )}
+        </Card>
       )}
 
       {/* ── Chart (always visible) ─────────────────────────── */}

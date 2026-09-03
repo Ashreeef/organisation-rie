@@ -15,6 +15,12 @@ import {
   ACCOMPANIMENT_CATEGORIES,
 } from '@/lib/menu-catalog';
 import { cn } from '@/lib/utils';
+import {
+  isoDate,
+  isWorkdayDow,
+  startOfOperationalWeek,
+  OPERATIONAL_WEEKDAYS,
+} from '@/lib/operational-calendar';
 import { toast } from 'sonner';
 import {
   CalendarDays,
@@ -43,15 +49,6 @@ import {
  * historiques) tout en restant libres en texte. Enregistrer écrit dans
  * data/processed/planned_menus.csv via l'API.
  */
-
-// Ordre réel de la semaine locale BNP : Dimanche → Jeudi
-const WEEKDAYS: { dow: number; label: string }[] = [
-  { dow: 0, label: 'Dimanche' },
-  { dow: 1, label: 'Lundi' },
-  { dow: 2, label: 'Mardi' },
-  { dow: 3, label: 'Mercredi' },
-  { dow: 4, label: 'Jeudi' },
-];
 
 // Entrées — valeurs canoniques issues des données historiques (menu_cleaning :
 // salade / soupe / salé / bourak, et leurs combinaisons courantes)
@@ -103,40 +100,6 @@ const ACC_OPTIONS: DishPickerOption[] = ACCOMPANIMENTS.map((a) => {
   };
 });
 
-function isoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/** Renvoie les 5 jours ouvrés de la semaine locale (Dimanche → Jeudi). */
-function isWorkday(dow: number): boolean {
-  return [0, 1, 2, 3, 4].includes(dow); // DOW JS: 0=Dimanche, ..., 4=Jeudi
-}
-
-function startOfLocalWorkWeek(from: Date): Date {
-  const start = new Date(from);
-  while (start.getDay() !== 0) {
-    start.setDate(start.getDate() - 1);
-  }
-  start.setHours(0, 0, 0, 0);
-  return start;
-}
-
-function nextWorkDays(from: Date, n = 5): Date[] {
-  const out: Date[] = [];
-  const cursor = startOfLocalWorkWeek(from);
-  while (out.length < n) {
-    const dow = cursor.getDay();
-    if (isWorkday(dow)) {
-      out.push(new Date(cursor));
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return out;
-}
-
 interface DayDraft {
   date: string;
   dow: number;
@@ -157,14 +120,14 @@ export default function MenusPlannerPage() {
 
   const load = React.useCallback(async () => {
     const start = new Date();
-    const alignedStart = startOfLocalWorkWeek(start);
+    const alignedStart = startOfOperationalWeek(start);
     const alignedDays: Date[] = [];
     let cursor = new Date(alignedStart);
 
     for (let i = 0; i < 5; i += 1) {
       alignedDays.push(new Date(cursor));
       cursor.setDate(cursor.getDate() + 1);
-      while (!isWorkday(cursor.getDay())) {
+      while (!isWorkdayDow(cursor.getDay())) {
         cursor.setDate(cursor.getDate() + 1);
       }
     }
@@ -323,7 +286,7 @@ export default function MenusPlannerPage() {
       {/* ── Les 5 jours ouvrés (Dimanche → Jeudi) ────────── */}
       <div className="space-y-4">
         {days.map((day, idx) => {
-          const dowLabel = WEEKDAYS.find((w) => w.dow === day.dow)?.label ?? '';
+          const dowLabel = OPERATIONAL_WEEKDAYS.find((w) => w.dow === day.dow)?.label ?? '';
           const dateLabel = new Date(day.date).toLocaleDateString('fr-FR', {
             day: 'numeric',
             month: 'short',

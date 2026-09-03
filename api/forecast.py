@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.calendar_utils import algerian_public_dates, ramadan_ranges  # noqa: E402
+from src.operational_calendar import is_operational_day  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -412,8 +413,10 @@ def _build_notes(date_str: str, office: int, ratio: float) -> str:
     parts = []
     if _is_ramadan(d):
         parts.append("Ramadan")
-    if d.dayofweek >= 5:
-        parts.append("Weekend")
+    # Jour non travaillé (dimanche → jeudi = jours de service ; vendredi/samedi
+    # exclus) — calendrier opérationnel canonique.
+    if not is_operational_day(d):
+        parts.append("Jour non travaillé")
     if _is_holiday(d):
         parts.append("Jour ferie")
     cal = "Hors Ramadan" if not parts else ", ".join(parts)

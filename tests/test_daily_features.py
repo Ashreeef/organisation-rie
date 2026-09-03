@@ -29,6 +29,7 @@ from src.forecasting.daily_features import (  # noqa: E402
     menu_fingerprint_from_frame,
     regenerate_features_for_date,
     roll_office_forward,
+    _next_operational_dates,
     HISTORY_FILE,
 )
 
@@ -47,6 +48,25 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture()
 def history():
     return pd.read_csv(HISTORY_FILE, parse_dates=["Date"])
+
+
+class TestNextOperationalDates:
+    """Les dates cibles des features ne comprennent QUE les journées de service
+    (dimanche → jeudi) : jamais de vendredi ni de samedi."""
+
+    def test_skips_friday_and_saturday(self):
+        # Jeudi 03/09/2026 → la prochaine journée est le dimanche 06/09/2026
+        dates = _next_operational_dates(pd.Timestamp("2026-09-03"), 2)
+        assert [d.dayofweek for d in dates] == [3, 6]  # jeudi, dimanche
+
+    def test_count_is_exact_and_all_operational(self):
+        dates = _next_operational_dates(pd.Timestamp("2026-09-04"), 10)
+        assert len(dates) == 10
+        assert all(d.dayofweek not in (4, 5) for d in dates)  # pas ven/sam
+
+    def test_includes_start_if_operational(self):
+        dates = _next_operational_dates(pd.Timestamp("2026-09-06"), 1)
+        assert dates[0] == pd.Timestamp("2026-09-06")  # dimanche, opérationnel
 
 
 class TestHolidayCalendar:
