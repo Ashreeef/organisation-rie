@@ -127,12 +127,9 @@ export interface ForecastHistoryEntry {
 export interface ModelMetrics {
   version: string;
   lastTrainingDate: string;
-  lastPredictionDate: string;
   evaluationMetric: string;
   predictionError: string;
   dataFreshness: string;
-  driftIndicator: 'stable' | 'modere' | 'eleve';
-  featureAvailability: number;
   accuracy: number;
   mae: number;
   rmse: number;
@@ -141,6 +138,7 @@ export interface ModelMetrics {
   lgbCount: number;
   xgbCount: number;
   calibrationLambda: number;
+  featureCount: number;
 }
 
 export interface ModelFamily {

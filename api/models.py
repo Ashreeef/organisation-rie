@@ -107,6 +107,8 @@ class ModelMetricsResponse(BaseModel):
     xgb_weight: float
     catboost_weight: float
     calibration_lambda: float
+    last_training: str
+    data_freshness: str
     oof_metrics: dict
     feature_count: int
 

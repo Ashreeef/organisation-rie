@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Bell, RefreshCw, Globe } from 'lucide-react';
+import { Bell, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -9,7 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Badge } from '@/components/ui/badge';
+import { api } from '@/lib/api';
 
 interface HeaderProps {
   title: string;
@@ -24,6 +24,25 @@ export function Header({ title, description }: HeaderProps) {
     month: 'long',
     year: 'numeric',
   });
+  const [freshness, setFreshness] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const m = await api.getModelMetrics();
+        if (active) setFreshness(m.dataFreshness);
+      } catch {
+        if (active) setFreshness(null);
+      }
+    };
+    refresh();
+    const id = window.setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, []);
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-6">
@@ -61,7 +80,7 @@ export function Header({ title, description }: HeaderProps) {
         <div className="hidden items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 md:flex">
           <span className="h-2 w-2 rounded-full bg-success" />
           <span className="text-xs text-muted-foreground">
-            Sources synchronisées — il y a 12 min
+            Sources synchronisées{ freshness ? ` — ${freshness}` : '' }
           </span>
         </div>
 

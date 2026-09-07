@@ -434,9 +434,6 @@ export default function ForecastsPage() {
                     Confiance : {CONFIDENCE_LABEL[conf]}
                   </span>
                 </div>
-                {!day.isHoliday && !day.isRamadan && (
-                  <span className="text-xs text-muted-foreground">Semaine type</span>
-                )}
               </div>
             </Card>
           );
@@ -504,19 +501,7 @@ export default function ForecastsPage() {
             </div>
           )}
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Les jours sans menu planifié sont laissés vides (aucune prévision) — la prédiction
-          est générée uniquement pour les jours dont le menu a été enregistré dans la
-          planification.
-        </p>
       </Card>
-
-      {/* ── Note de bas de page ───────────────────────────── */}
-      <p className="px-1 text-xs italic text-muted-foreground">
-        Les prévisions sont générées automatiquement par le modèle d&apos;ensemble
-        (36 modèles · AsymCost : 19.52 · MAE : 17.90 repas). La marge de +6% est
-        appliquée automatiquement pour absorber les variations d&apos;affluence.
-      </p>
     </div>
   );
 }

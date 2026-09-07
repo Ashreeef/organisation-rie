@@ -635,20 +635,17 @@ export const api = {
     try {
       const data = await apiGet<{
         version: string; total_models: number; lgb_count: number; xgb_count: number;
-        catboost_count: number; calibration_lambda: number;
+        catboost_count: number; calibration_lambda: number; last_training: string;
+        data_freshness: string; feature_count: number;
         oof_metrics: { 'MAE (repas)': number; 'RMSE (repas)': number; 'Asym. Cost': number };
-        feature_count: number;
       }>('/api/model/metrics');
 
       return {
         version: `v${data.version}`,
-        lastTrainingDate: todayKey(),
-        lastPredictionDate: todayKey(),
+        lastTrainingDate: data.last_training,
         evaluationMetric: 'AsymmetricCost',
         predictionError: `${data.oof_metrics['Asym. Cost'].toFixed(1)} repas`,
-        dataFreshness: 'En ligne',
-        driftIndicator: 'stable',
-        featureAvailability: 100,
+        dataFreshness: data.data_freshness,
         accuracy: Math.round(Math.max(0, (1 - data.oof_metrics['MAE (repas)'] / 310) * 100)),
         mae: data.oof_metrics['MAE (repas)'],
         rmse: data.oof_metrics['RMSE (repas)'],
@@ -657,13 +654,14 @@ export const api = {
         lgbCount: data.lgb_count,
         xgbCount: data.xgb_count,
         calibrationLambda: data.calibration_lambda,
+        featureCount: data.feature_count,
       };
     } catch {
       return {
-        version: '—', lastTrainingDate: '—', lastPredictionDate: '—', evaluationMetric: '—',
-        predictionError: '—', dataFreshness: 'Hors ligne', driftIndicator: 'stable', featureAvailability: 0,
+        version: '—', lastTrainingDate: '—', evaluationMetric: '—',
+        predictionError: '—', dataFreshness: 'Hors ligne',
         accuracy: 0, mae: 0, rmse: 0, asymmetricCost: 0, catboostCount: 0, lgbCount: 0, xgbCount: 0,
-        calibrationLambda: 0,
+        calibrationLambda: 0, featureCount: 0,
       };
     }
   },
@@ -675,9 +673,9 @@ export const api = {
         lgb_weight: number; xgb_weight: number; catboost_weight: number;
       }>('/api/model/metrics');
       return [
-        { name: 'LightGBM', modelCount: data.lgb_count, contribution: Math.round(data.lgb_weight * 100), description: `Gradient boosting — seed × alpha variants` },
-        { name: 'XGBoost', modelCount: data.xgb_count, contribution: Math.round(data.xgb_weight * 100), description: `Regularized boosting — seed × alpha variants` },
-        { name: 'CatBoost', modelCount: data.catboost_count, contribution: Math.round(data.catboost_weight * 100), description: `Ordered boosting — dominant blend weight` },
+        { name: 'LightGBM', modelCount: data.lgb_count, contribution: Math.round(data.lgb_weight * 100), description: `Gradient boosting — variantes seed × alpha` },
+        { name: 'XGBoost', modelCount: data.xgb_count, contribution: Math.round(data.xgb_weight * 100), description: `Gradient boosting — poids de mélange dominant` },
+        { name: 'CatBoost', modelCount: data.catboost_count, contribution: Math.round(data.catboost_weight * 100), description: `Gradient boosting — variantes seed` },
       ];
     } catch {
       return [];
