@@ -241,6 +241,7 @@ export default function DashboardPage() {
 
   const handleEditBilan = async () => {
     setToday(await api.editBilanToday());
+    toast.info('Bilan rouvert — corrigez puis enregistrez à nouveau');
   };
 
   return (
@@ -410,16 +411,27 @@ export default function DashboardPage() {
               "Journée clôturée" title + date, so no duplicate here. */}
           {today.bilan && (
             <Card className="border-success/30 bg-success/5 p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-success/10">
-                  <CheckCircle2 className="h-8 w-8 text-success" />
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-success/10">
+                    <CheckCircle2 className="h-8 w-8 text-success" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Résultat de la journée</p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">
+                      {formatNumber(today.bilan.prepared)} préparés · {formatNumber(today.bilan.served)} servis · {formatNumber(today.bilan.remaining)} restants · {formatPercent(today.bilan.wasteRate)} gaspillage
+                    </p>
+                    {today.bilan.confirmedAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Clôturé le {new Date(today.bilan.confirmedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} à {new Date(today.bilan.confirmedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Résultat de la journée</p>
-                  <p className="mt-1 text-lg font-semibold text-foreground">
-                    {formatNumber(today.bilan.prepared)} préparés · {formatNumber(today.bilan.served)} servis · {formatNumber(today.bilan.remaining)} restants · {formatPercent(today.bilan.wasteRate)} gaspillage
-                  </p>
-                </div>
+                <Button variant="outline" size="sm" onClick={handleEditBilan}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Modifier le bilan
+                </Button>
               </div>
             </Card>
           )}

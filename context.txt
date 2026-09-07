@@ -1,0 +1,2133 @@
+PROJECT FILES
+==============
+
+
+
+
+FILE: models\_deployment.pkl
+
+================================================================================
+FILE: models\office_present_best_params.json
+================================================================================
+
+{
+  "learning_rate": 0.16917635629157524,
+  "num_leaves": 15,
+  "max_depth": 8,
+  "min_child_samples": 8,
+  "subsample": 0.9935496864584777,
+  "colsample_bytree": 0.9630659181130071,
+  "reg_alpha": 6.903717055434688,
+  "reg_lambda": 8.073678037024452,
+  "objective": "regression",
+  "metric": "rmse",
+  "verbosity": -1,
+  "seed": 42,
+  "n_jobs": -1
+}
+
+
+================================================================================
+FILE: models\xgb_models.pkl
+
+
+
+
+================================================================================
+FILE: scripts\backup_local_rie.ps1
+================================================================================
+
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSScriptRoot
+$timestamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+$backupRoot = Join-Path $root "backups"
+$backupDir = Join-Path $backupRoot "rie_backup_$timestamp"
+
+if (-not (Test-Path $backupRoot)) {
+    New-Item -ItemType Directory -Path $backupRoot | Out-Null
+}
+
+$itemsToBackup = @(
+    (Join-Path $root "data"),
+    (Join-Path $root "models"),
+    (Join-Path $root ".env"),
+    (Join-Path $root "scripts")
+)
+
+foreach ($item in $itemsToBackup) {
+    if (Test-Path $item) {
+        Copy-Item -Path $item -Destination $backupDir -Recurse -Force
+    }
+}
+
+Write-Host "Backup created: $backupDir" -ForegroundColor Green
+
+
+
+================================================================================
+FILE: scripts\gen_menu_catalog_ts.py
+================================================================================
+
+"""
+Génère dashboard/lib/menu-catalog.ts depuis src/menu_optimization/menu_catalog.json.
+
+Le catalogue JSON est la source de vérité unique : ce script le transforme en
+module TypeScript (types + constantes + utilitaires) consommé par l'interface
+(Gestionnaire de menus, pages d'analytique, bannières de prévision).
+
+Usage:
+    python scripts/gen_menu_catalog_ts.py [--catalog PATH] [--out PATH]
+"""
+import argparse
+import json
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CATALOG = REPO_ROOT / "src" / "menu_optimization" / "menu_catalog.json"
+DEFAULT_OUT = REPO_ROOT / "dashboard" / "lib" / "menu-catalog.ts"
+
+
+def _ts(s: str) -> str:
+    return json.dumps(s, ensure_ascii=False)
+
+
+def _ratio_effect(value: str) -> str:
+    mapping = {
+        "tres_eleve": "très élevé",
+        "eleve": "élevé",
+        "moyen": "moyen",
+        "faible": "faible",
+    }
+    return mapping.get(value, "moyen")
+
+
+def render(catalog: dict) -> str:
+    cats = catalog["dish_categories"]
+    dishes = catalog["dishes"]
+    acc_cats = catalog["accompaniment_categories"]
+    accs = catalog["accompaniments"]
+
+    cat_type_union = " | ".join(f"{_ts(c['id'])}" for c in cats)
+    cat_entries = ",\n".join(
+        "  { id: " + f"{_ts(c['id'])}, label: {_ts(c['label'])}, color: {_ts(c['color'])}" + " }"
+        for c in cats
+    )
+    dish_objects = ",\n".join(
+        "  {\n"
+        f"    id: {_ts(d['id'])},\n"
+        f"    name: {_ts(d['name'])},\n"
+        f"    category: {_ts(d['category'])},\n"
+        f"    aliases: {json.dumps(d['aliases'], ensure_ascii=False)},\n"
+        f"    keywords: {json.dumps(d['keywords'], ensure_ascii=False)},\n"
+        f"    typical_ratio: {d['typical_ratio']},\n"
+        f"    ratio_effect: {_ts(_ratio_effect(d['ratio_effect']))},\n"
+        f"    is_traditional: {str(d['is_traditional']).lower()},\n"
+        f"    is_premium: {str(d['is_premium']).lower()},\n"
+        "  }"
+        for d in dishes
+    )
+    acc_cat_entries = ",\n".join(
+        "  { id: " + f"{_ts(c['id'])}, label: {_ts(c['label'])}" + " }"
+        for c in acc_cats
+    )
+    acc_objects = ",\n".join(
+        "  {\n"
+        f"    id: {_ts(a['id'])},\n"
+        f"    name: {_ts(a['name'])},\n"
+        f"    category: {_ts(a['category'])},\n"
+        f"    aliases: {json.dumps(a['aliases'], ensure_ascii=False)},\n"
+        "  }"
+        for a in accs
+    )
+    acc_cat_union = " | ".join(f"{_ts(a['id'])}" for a in acc_cats)
+
+    premium = [d for d in dishes if d["is_premium"]]
+    traditional = [d for d in dishes if d["is_traditional"]]
+    high_ratio = [d for d in dishes if _ratio_effect(d["ratio_effect"]) in ("élevé", "très élevé")]
+
+    return f"""// Auto-generated from src/menu_optimization/menu_catalog.json
+// Do not edit by hand — run: python scripts/gen_menu_catalog_ts.py
+
+export type DishCategory = {cat_type_union}
+
+export type RatioEffect = 'très élevé' | 'élevé' | 'moyen' | 'faible'
+
+export interface Dish {{
+  id: string
+  name: string
+  category: DishCategory
+  aliases: string[]
+  keywords: string[]
+  typical_ratio: number
+  ratio_effect: RatioEffect
+  is_traditional: boolean
+  is_premium: boolean
+}}
+
+export const DISH_CATEGORIES: {{ id: DishCategory; label: string; color: string }}[] = [
+{cat_entries}
+]
+
+export const DISHES: Dish[] = [
+{dish_objects}
+]
+
+export type AccompanimentCategory = {acc_cat_union}
+
+export interface Accompaniment {{
+  id: string
+  name: string
+  category: AccompanimentCategory
+  aliases: string[]
+}}
+
+export const ACCOMPANIMENT_CATEGORIES: {{ id: AccompanimentCategory; label: string }}[] = [
+{acc_cat_entries}
+]
+
+export const ACCOMPANIMENTS: Accompaniment[] = [
+{acc_objects}
+]
+
+function iconv(s: string): string {{
+  return s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim()
+}}
+
+/** Find a dish by partial name or alias match. */
+export function findDishByName(input: string): Dish | undefined {{
+  const normalized = iconv(input)
+  if (!normalized) return undefined
+  return DISHES.find((d) => {{
+    const dn = iconv(d.name)
+    if (dn === normalized) return true
+    return d.aliases.some((a) => {{
+      const an = iconv(a)
+      return an && (an === normalized || an.includes(normalized) || normalized.includes(an))
+    }})
+  }})
+}}
+
+/** Get menu category string for the analytics page. */
+export function getMenuCategory(dish: string): DishCategory | 'Autre' {{
+  const found = findDishByName(dish)
+  return found ? found.category : 'Autre'
+}}
+
+/** Get all dishes sorted alphabetically within each category. */
+export function getDishesByCategory(): Record<DishCategory, Dish[]> {{
+  const result = {{}} as Record<DishCategory, Dish[]>
+  for (const cat of DISH_CATEGORIES) {{
+    result[cat.id] = DISHES
+      .filter((d) => d.category === cat.id)
+      .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+  }}
+  return result
+}}
+
+export const MENU_STATS = {{
+  totalDishes: {len(dishes)},
+  premiumDishes: {len(premium)},
+  traditionalDishes: {len(traditional)},
+  highRatioDishes: {len(high_ratio)},
+}}
+"""
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--catalog", type=str, default=str(DEFAULT_CATALOG))
+    parser.add_argument("--out", type=str, default=str(DEFAULT_OUT))
+    args = parser.parse_args(argv)
+
+    catalog = json.loads(Path(args.catalog).read_text(encoding="utf-8"))
+    ts = render(catalog)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(ts, encoding="utf-8")
+    print(f"Ecrit {out} ({len(ts.splitlines())} lignes)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+
+================================================================================
+FILE: scripts\install_daily_task.ps1
+================================================================================
+
+<#
+.SYNOPSIS
+    Planifie la génération quotidienne des features live sur Windows
+    (Planificateur de tâches).
+
+.DESCRIPTION
+    Enregistre une tâche quotidienne qui exécute
+    scripts\run_daily_features.py (logging + journal JSON). La tâche est
+    *relancée si le PC était éteint* (StartWhenAvailable) et redémarrée 3 fois
+    en cas d'échec.
+
+.PARAMETER At
+    Heure d'exécution (HH:MM), défaut 06:00.
+
+.PARAMETER Days
+    Horizon en jours calendaires, défaut 14.
+
+.PARAMETER PythonPath
+    Chemin absolu du python à utiliser (défaut : celui de Get-Command python).
+
+.PARAMETER TaskName
+    Nom de la tâche, défaut "RIE_df_daily_features".
+
+.EXAMPLE
+    .\scripts\install_daily_task.ps1                      # installe à 06:00
+    .\scripts\install_daily_task.ps1 -At 06:30 -Days 14
+    .\scripts\install_daily_task.ps1 -Uninstall           # supprime la tâche
+    .\scripts\install_daily_task.ps1 -RunNow              # exécution de test immédiate
+
+.NOTES
+    Enregistre pour l'utilisateur courant (aucun mot de passe requis) ; la
+    tâche s'exécute uniquement lorsque l'utilisateur est connecté.
+#>
+[CmdletBinding()]
+param(
+    [string]$At = "06:00",
+    [int]$Days = 14,
+    [string]$PythonPath = "",
+    [string]$TaskName = "RIE_df_daily_features",
+    [switch]$Uninstall,
+    [switch]$RunNow
+)
+
+$ErrorActionPreference = "Stop"
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
+if (-not $PythonPath) {
+    $cmd = Get-Command python -ErrorAction Stop
+    $PythonPath = $cmd.Source
+}
+if (-not (Test-Path -LiteralPath $PythonPath)) {
+    throw "Python introuvable: $PythonPath"
+}
+
+if ($Uninstall) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "Tâche '$TaskName' supprimée (si elle existait)."
+    exit 0
+}
+
+$argLine = "`"$repo\scripts\run_daily_features.py`" --days $Days --out `"$repo\data\processed\features_live.csv`" --log `"$repo\data\logs\daily_features.log`""
+
+if ($RunNow) {
+    $psArgs = @(
+        (Join-Path $repo "scripts\run_daily_features.py"),
+        "--days",  [string]$Days,
+        "--out",   (Join-Path $repo "data\processed\features_live.csv"),
+        "--log",   (Join-Path $repo "data\logs\daily_features.log")
+    )
+    Write-Host "Exécution de test :"
+    Write-Host "  $PythonPath $($psArgs -join ' ')"
+    Write-Host "  (workdir: $repo)"
+    & $PythonPath @psArgs
+    Write-Host "Exit code: $LASTEXITCODE"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    exit 0
+}
+
+$action = New-ScheduledTaskAction -Execute $PythonPath -Argument $argLine -WorkingDirectory $repo
+$trigger = New-ScheduledTaskTrigger -Daily -At $At
+$settings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 5) `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+Register-ScheduledTask -TaskName $TaskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Settings $settings `
+    -Description "RIE - génération quotidienne features_live.csv (python $PythonPath)" | Out-Null
+
+Write-Host "Tâche '$TaskName' planifiée tous les jours à $At."
+Write-Host "  commande : $PythonPath $argLine"
+Write-Host "  test     : .\scripts\install_daily_task.ps1 -RunNow"
+Write-Host "  retrait  : .\scripts\install_daily_task.ps1 -Uninstall"
+
+
+================================================================================
+FILE: scripts\query_models_direct.py
+================================================================================
+
+"""
+Query the deployed RIE models DIRECTLY (no API server).
+
+Replicates the exact cascade of api/forecast.predict_today but regenerates the
+2026-09-01 feature row WITH the menu the user saved on the website
+(planned_menus.csv), so menu text features (tfidf_svd_*, plat1_te, menu_cat_*,
+acc_*, menu_band_*) actually reflect "Poulet rôti" / "Pomme sautée" instead of
+zeros, and prints every intermediate step of the pipeline.
+
+Regression-style sleep demo of what the serving layer does:
+  1. features_live pattern = daily_features.generate_features(...) with the
+     planned menu merged (same code path as the daily regeneration job);
+  2. ratio = ensemble blend (LGB/XGB/CatBoost) over the full 157 feat_cols;
+  3. count = ratio * office_present  -> DOW offset -> shrinkage toward DOW mean;
+  4. clip + round -> safety margin (+4%/+6% Ramadan) -> confidence band.
+
+Usage:
+    .venv\\Scripts\\python.exe scripts/query_models_direct.py [YYYY-MM-DD]
+"""
+import pickle
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+from api import forecast as fc
+from src.forecasting.daily_features import generate_features
+
+SEP = "-" * 62
+
+
+def main(target_date: str = "2026-09-01") -> None:
+    dep = fc._load_deployment()
+    print(SEP)
+    print(f"DEPLOYED BUNDLE  models/_deployment.pkl")
+    print(f"  blend weights      LGB {dep['best_blend_w'][0]:.4f} | "
+          f"XGB {dep['best_blend_w'][1]:.4f} | "
+          f"CAT {dep['best_blend_w'][2]:.4f}")
+    print(f"  lam_opt={float(dep['lam_opt']):.4f}  offsets={dep['offsets']}")
+    print(f"  clip=({dep['clip_lo']}, {dep['clip_hi']})")
+    print(f"  n_feat_cols={len(dep['feat_cols'])}  n_models="
+          f"{len(dep['lgb_models'])}+{len(dep['xgb_models'])}+{len(dep['cb_models'])}")
+
+    # --- 1. what the user saved on the website -------------------------------
+    planned = pd.read_csv(REPO / "data" / "processed" / "planned_menus.csv")
+    pm = planned[planned["date"] == target_date]
+    if pm.empty:
+        print(f"\nNo planned menu for {target_date} !")
+        menu_1, menu_2, entrees = "Poulet rôti", "Pomme sautée", "Salade ou Soupe ou Salé"
+    else:
+        r = pm.iloc[0]
+        menu_1 = r["plat_principal_1"]
+        menu_2 = r["plat_principal_2"] if pd.notna(r["plat_principal_2"]) else None
+        entrees = r["entrees"] if pd.notna(r["entrees"]) else None
+    print(f"\nWEBSITE MENU ({target_date}):")
+    print(f"  entrees           : {entrees}")
+    print(f"  plat_principal_1  : {menu_1}")
+    print(f"  plat_principal_2  : {menu_2}")
+
+    # --- 2. rebuild the live feature row WITH this menu -----------------------
+    # Same function the daily job runs; merges planned_menus.csv so the text
+    # features (tfidf_svd_*, plat1_te) are computed for the real dishes.
+    temp_out = REPO / "data" / "processed" / "features_live_QUERYONLY.csv"
+    feats_df = generate_features(
+        target_dates=[pd.Timestamp(target_date)],
+        out_path=temp_out,
+    )
+    row = feats_df[feats_df["Date"] == pd.Timestamp(target_date)].iloc[0]
+    print(f"\nFEATURE ROW for {target_date}:")
+    for c in ("office_present", "plat1_te", "menu_typical_ratio", "menu_mapped"):
+        if c in row:
+            print(f"  {c:<20}= {row[c]}")
+    print("  tfidf_svd_0..7    =", [round(float(row[f"tfidf_svd_{i}"]), 4)
+                                     for i in range(8)])
+
+    # --- 3. cascade (identical to api/forecast.predict_today) ----------------
+    d = pd.Timestamp(target_date)
+    dow = fc._algerian_dow(d)
+
+    op_pred = fc._office_from_features_row(row)
+    print(f"\nCASCADE for {target_date} (dow={dow}):")
+
+    # 3a. raw ensemble ratio (157 features)
+    ratio_pred = fc._predict_ratio_from_features(dep, row)
+    print(f"  [1] ratio_pred (blend)               = {ratio_pred:.4f}")
+
+    # 3b. ratio -> count + DOW offset
+    raw_count = ratio_pred * op_pred
+    off = dep["offsets"].get(dow, 0.0)
+    after_offset = raw_count + off
+    print(f"  [2] ratio*office={ratio_pred:.4f}*{op_pred:.1f} = {raw_count:.2f}")
+    print(f"  [3] + offset[{dow}]={off:.2f}          = {after_offset:.2f}")
+
+    # 3c. shrinkage toward DOW mean
+    lam = float(dep["lam_opt"])
+    dow_mean = dep["dow_mean_actual"].get(dow, raw_count)
+    shrunk = lam * after_offset + (1 - lam) * dow_mean
+    print(f"  [4] shrink lam={lam:.3f} mean_dow[{dow}]={float(dow_mean):.2f} -> {shrunk:.2f}")
+
+    # 3d. clip + round
+    count = float(np.clip(shrunk, dep["clip_lo"], dep["clip_hi"]))
+    count_int = int(round(count))
+    print(f"  [5] clip+round                       = {count_int}")
+
+    # 3e. safety margin + confidence
+    safety = 0.06 if fc._is_ramadan(d) else 0.04
+    recommended = int(round(count_int * (1 + safety)))
+    spread = max(10, int(round(op_pred * 0.045)))
+    lo = max(0, count_int - spread)
+    hi = count_int + spread
+    level = "high" if spread <= 18 else "medium" if spread <= 28 else "low"
+    print(f"  [6] safety={safety:.2f} -> recommended    = {recommended}")
+    print(f"  [7] office={int(round(op_pred))} spread={spread} -> CI [{lo}, {hi}] ({level})")
+
+    print("\nFINAL (direct model query):")
+    print(f"  office_present     : {int(round(op_pred))}")
+    print(f"  predicted_ratio    : {round(ratio_pred, 4)}")
+    print(f"  employees_count    : {count_int}")
+    print(f"  recommended_meals  : {recommended}")
+    print(f"  confidence         : [{lo}, {hi}] ({level})")
+
+    # --- 4. compare with what the API would say WITHOUT the regenerated menu --
+    fc._features_cache = None  # force reload so we see ONLY the temp live file
+    print(SEP)
+    print("Sanity: api.predict_today on same (regenerated) features:")
+    print(" ", fc.predict_today(target_date))
+
+    temp_out.unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "2026-09-01")
+
+
+================================================================================
+FILE: scripts\run_daily_features.py
+================================================================================
+
+"""
+Exécution quotidienne planifiée de la génération des features live.
+
+Usage:
+    python scripts/run_daily_features.py [--days 14]
+        [--out data/processed/features_live.csv]
+        [--history data/processed/real_clean.csv]
+        [--log data/logs/daily_features.log]
+
+Le runner déloge les sorties de `src.forecasting.daily_features` dans un
+fichier horodaté (avec rotation au-delà de 5 Mo) et écrit un journal JSON
+`data/logs/daily_features_last_run.json` (statut, horodatage, volume, NaN)
+consultable par la tâche planifiée ou la supervision.
+
+Code retour : 0 si succès, 1 sinon.
+"""
+import argparse
+import json
+import sys
+import time
+import traceback
+from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from src.forecasting.daily_features import HISTORY_FILE, OUT_FILE, generate_features  # noqa: E402
+
+LOG_DIR = REPO_ROOT / "data" / "logs"
+JOURNAL_FILE = LOG_DIR / "daily_features_last_run.json"
+MAX_LOG_BYTES = 5 * 1024 * 1024
+
+
+def _append_log(path, line):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.stat().st_size > MAX_LOG_BYTES:
+        path.with_suffix(".log.1").write_bytes(path.read_bytes())
+        path.unlink()
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+
+def _write_journal(payload):
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    JOURNAL_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--days", type=int, default=14)
+    parser.add_argument("--out", type=str, default=str(OUT_FILE))
+    parser.add_argument("--history", type=str, default=str(HISTORY_FILE))
+    parser.add_argument("--log", type=str, default=str(LOG_DIR / "daily_features.log"))
+    args = parser.parse_args(argv)
+
+    ts = datetime.now().isoformat(timespec="seconds")
+    t0 = time.time()
+    payload = {"ts": ts, "days": args.days, "status": "error"}
+    try:
+        history = pd.read_csv(args.history, parse_dates=["Date"])
+        out = generate_features(
+            days=args.days,
+            out_path=args.out,
+            history=history,
+        )
+        rows = len(out)
+        nan_total = int(out.isna().sum().sum())
+        first_offices = [round(v) for v in out["office_present"].head(3)]
+        payload.update({
+            "status": "ok",
+            "rows": rows,
+            "nan_total": nan_total,
+            "first_dates": [str(d) for d in out["Date"].head(3)],
+            "office_samples": first_offices,
+            "out": args.out,
+            "duration_s": round(time.time() - t0, 1),
+        })
+        msg = (f"[{ts}] OK rows={rows} first_office={first_offices} "
+               f"nan={nan_total} dur={payload['duration_s']}s -> {args.out}")
+        print(msg)
+        _append_log(args.log, msg)
+        _write_journal(payload)
+        return 0
+    except Exception as exc:  # noqa: BLE001 — tout échec doit remonter au planificateur
+        trac = traceback.format_exc()
+        payload.update({"error": str(exc), "trace": trac,
+                        "duration_s": round(time.time() - t0, 1)})
+        msg = f"[{ts}] ERREUR {exc!r}"
+        print(msg, file=sys.stderr)
+        print(trac, file=sys.stderr)
+        _append_log(args.log, msg)
+        _write_journal(payload)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+================================================================================
+FILE: scripts\start_local_rie.ps1
+================================================================================
+
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSScriptRoot
+$backendPath = Join-Path $root "api"
+$dashboardPath = Join-Path $root "dashboard"
+$venvPath = Join-Path $root ".venv"
+
+if (-not (Test-Path $venvPath)) {
+    Write-Host "Environment Python .venv not found. Please create it first." -ForegroundColor Red
+    Write-Host "Command: py -3.12 -m venv .venv" -ForegroundColor Yellow
+    exit 1
+}
+
+Write-Host "Starting RIE backend..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root'; .\.$((Split-Path -Leaf $venvPath))\Scripts\Activate.ps1; uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+
+Write-Host "Starting RIE frontend..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$dashboardPath'; npm run dev -- --hostname 0.0.0.0 --port 3000"
+
+Write-Host "`nRIE started locally." -ForegroundColor Green
+Write-Host "Backend: http://localhost:8000/api/health" -ForegroundColor Yellow
+Write-Host "Frontend: http://localhost:3000" -ForegroundColor Yellow
+Write-Host "LAN access: http://<PC_IP>:3000" -ForegroundColor Yellow
+
+
+
+
+
+================================================================================
+FILE: tests\__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: tests\test_api.py
+================================================================================
+
+"""
+Tests for api.forecast — cascade inference, fallbacks et calendrier.
+
+Hermétiques : MODELS_DIR / DATA_DIR pointent vers des dossiers temporaires
+vides, donc `_load_deployment` construit le bundle de repli et aucune feature
+réelle n'est lue, sauf dans TestIntegrationRealData (guarded, optionnel).
+"""
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from api import forecast as f  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolate_dirs(tmp_path, monkeypatch):
+    monkeypatch.setattr(f, "MODELS_DIR", tmp_path / "models")
+    monkeypatch.setattr(f, "DATA_DIR", tmp_path / "data")
+    (tmp_path / "models").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+    f._deploy_cache = None
+    f._sub_cache = None
+    f._features_cache = None
+    yield
+
+
+def _write_features(df, tmp_path, name="features_live.csv"):
+    path = tmp_path / "data" / name
+    df.to_csv(path, index=False)
+    return path
+
+
+# ── Calendrier ─────────────────────────────────────────────────────
+
+class TestCalendar:
+    def test_algerian_dow_week_sun_sat(self):
+        # 2026-09-07..13 = Lun..Dim
+        dates = pd.date_range("2026-09-07", periods=7, freq="D")
+        expected = [1, 2, 3, 4, 5, 6, 0]
+        assert [f._algerian_dow(d) for d in dates] == expected
+
+    def test_is_ramadan_window(self):
+        assert f._is_ramadan(pd.Timestamp("2026-03-10")) is True
+        assert f._is_ramadan(pd.Timestamp("2026-03-20")) is False  # Aïd el-Fitr
+
+    def test_is_holiday_mawlid_corrected(self):
+        # Mawlid 2026 = 25 août (corrigé) ; 25 septembre n'est plus férié
+        assert f._is_holiday(pd.Timestamp("2026-08-25")) is True
+        assert f._is_holiday(pd.Timestamp("2026-09-25")) is False
+
+
+# ── get_model_info ─────────────────────────────────────────────────
+
+class TestGetModelInfo:
+    def test_fallback_bundle_counts(self):
+        info = f.get_model_info()
+        assert info["version"] == "3.0"
+        assert info["total_models"] > 0
+        assert info["lgb_count"] * info["xgb_count"] * info["catboost_count"] > 0
+        assert info["feature_count"] == 0  # bundle de repli : aucun modèle entraîné
+        assert set(info["oof_metrics"]) == {"Asym. Cost", "MAE (repas)", "RMSE (repas)"}
+
+
+# ── predict_today sans features (repli calendaire) ─────────────────
+
+class TestPredictTodayCalendarOnly:
+    def test_explicit_office_echoed_and_bounds(self):
+        res = f.predict_today("2026-09-01", office_present=300)
+        assert res["date"] == "2026-09-01"
+        assert res["office_present"] == 300
+        assert 0.30 <= res["predicted_ratio"] <= 0.88
+        assert res["employees_count"] >= 0
+        assert res["recommended_meals"] >= res["employees_count"]
+        assert res["confidence_lower"] <= res["employees_count"] <= res["confidence_upper"]
+        assert res["confidence_level"] in ("high", "medium", "low")
+
+    def test_ramadan_reduces_ratio(self):
+        # 2026-03-05 : jeudi (dow algérien 4 -> base 0.60) en Ramadan -> x0.85
+        res = f.predict_today("2026-03-05", office_present=350)
+        assert res["predicted_ratio"] == pytest.approx(0.60 * 0.85, abs=1e-6)
+        assert "Ramadan" in res["recommendation_note"]
+
+    def test_holiday_halves_ratio(self):
+        # Mawlid 2026-08-25 : mardi (dow 2 -> base 0.61) -> x0.50
+        res = f.predict_today("2026-08-25", office_present=350)
+        assert res["predicted_ratio"] == pytest.approx(0.61 * 0.50, abs=1e-6)
+        assert "Jour ferie" in res["recommendation_note"]
+
+    def test_non_operational_day_note(self):
+        # Samedi 2026-09-05 (jour NON travaillé dans le calendrier opérationnel
+        # dimanche→jeudi ; vendredi/samedi exclus) → note "Jour non travaillé".
+        res = f.predict_today("2026-09-05", office_present=300)
+        assert "Jour non travaillé" in res["recommendation_note"]
+
+    def test_operational_day_no_non_working_note(self):
+        # Dimanche 2026-09-06 est une journée de service → ne doit PAS être
+        # marqué "Jour non travaillé" (seuls vendredi/samedi le sont).
+        res = f.predict_today("2026-09-06", office_present=300)
+        assert "Jour non travaillé" not in res["recommendation_note"]
+
+    def test_office_dow_fallback_deterministic(self):
+        # Bundle de repli : dow_mean_actual {6:310, 0:295, 1:290, 2:300, 3:298}
+        d = pd.Timestamp("2026-09-01")  # mardi, dow algérien 2
+        assert f._office_dow_fallback(d) == pytest.approx(300.0)
+        # Jour férié : divisé par deux mais borné par clip_lo (230)
+        hol = pd.Timestamp("2026-08-25")  # Mawlid, mardi -> 2 -> 150 -> clip 230
+        assert f._office_dow_fallback(hol) == pytest.approx(230.0)
+
+    def test_predict_without_model_uses_dow_fallback(self):
+        res = f.predict_today("2026-09-01")  # pas d'office explicite
+        assert res["office_present"] == 300  # dow_mean_actual[2]
+        assert f._predict_office_present(pd.Timestamp("2026-09-01")) == pytest.approx(300.0)
+
+
+# ── predict_today avec features (chemin live) ──────────────────────
+
+class TestPredictTodayWithFeatures:
+    def test_prefers_observed_office_from_features(self, tmp_path):
+        _write_features(pd.DataFrame({"Date": ["2026-09-01"],
+                                      "office_present": [555],
+                                      "office_present_pred": [400]}), tmp_path, "features_live.csv")
+        res = f.predict_today("2026-09-01")
+        assert res["office_present"] == 555  # observé > prédit
+
+    def test_uses_pred_when_observed_missing(self, tmp_path):
+        _write_features(pd.DataFrame({"Date": ["2026-09-01"],
+                                      "office_present": [np.nan],
+                                      "office_present_pred": [400]}), tmp_path, "features_live.csv")
+        res = f.predict_today("2026-09-01")
+        assert res["office_present"] == 400
+        assert res["predicted_ratio"] == pytest.approx(0.62, abs=1e-6)
+        # compte = ratio x office -> offset DOW -> shrinkage -> clip
+        dep = f._build_fallback_deployment()
+        dow = f._algerian_dow(pd.Timestamp("2026-09-01"))
+        raw = 0.62 * 400 + dep["offsets"][dow]
+        count = int(round(np.clip(
+            dep["lam_opt"] * raw + (1 - dep["lam_opt"]) * dep["dow_mean_actual"][dow],
+            dep["clip_lo"], dep["clip_hi"],
+        )))
+        assert res["employees_count"] == count
+
+    def test_live_wins_over_train_on_duplicate_date(self, tmp_path):
+        _write_features(pd.DataFrame({"Date": ["2026-09-01"],
+                                      "office_present": [500],
+                                      "office_present_pred": [500]}), tmp_path, "features_live.csv")
+        _write_features(pd.DataFrame({"Date": ["2026-09-01"],
+                                      "office_present": [900],
+                                      "office_present_pred": [900]}), tmp_path, "features_train.csv")
+        res = f.predict_today("2026-09-01")
+        assert res["office_present"] == 500
+
+    def test_history_date_uses_train_office(self, tmp_path):
+        _write_features(pd.DataFrame({"Date": ["2024-12-30"],
+                                      "office_present": [412],
+                                      "office_present_pred": [399]}), tmp_path, "features_train.csv")
+        res = f.predict_today("2024-12-30")
+        assert res["office_present"] == 412
+
+    def test_office_from_features_row_nan(self):
+        row = pd.Series({"office_present": np.nan, "office_present_pred": np.nan})
+        assert f._office_from_features_row(row) is None
+        row2 = pd.Series({"Date": "2026-09-01", "office_present_pred": 333})
+        assert f._office_from_features_row(row2) == pytest.approx(333.0)
+
+
+# ── Intégration optionnelle (données réelles du repo) ──────────────
+
+class TestIntegrationRealData:
+    @pytest.mark.skipif(
+        not (ROOT / "data" / "processed" / "features_live.csv").exists()
+        or not (ROOT / "models" / "_deployment.pkl").exists(),
+        reason="features_live.csv et/ou _deployment.pkl absents",
+    )
+    def test_live_date_matches_generated_office(self):
+        # Le fixture autouse pointe vers des dossiers vides : on revient aux
+        # données réelles du repo pour ce test d'intégration.
+        f.MODELS_DIR = ROOT / "models"
+        f.DATA_DIR = ROOT / "data" / "processed"
+        f._deploy_cache = None
+        f._sub_cache = None
+        f._features_cache = None
+        live = pd.read_csv(ROOT / "data" / "processed" / "features_live.csv",
+                           parse_dates=["Date"])
+        day = live.iloc[0]
+        res = f.predict_today(str(day["Date"].date()))
+        assert res["office_present"] == int(round(day["office_present_pred"]))
+
+
+================================================================================
+FILE: tests\test_daily_features.py
+================================================================================
+
+"""
+Tests for src/forecasting/daily_features — génération quotidienne des features.
+
+La validation clé est la *fidélité* : pour une date déjà dans l'historique, les
+126 features produites doivent être identiques à celles du fichier
+data/processed/features_train.csv (mêmes sémantiques de shift en lignes).
+"""
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from src.forecasting.daily_features import (  # noqa: E402
+    _deployment_feature_cols,
+    _fetch_open_meteo_forecast,
+    _fill_live_nans,
+    _holiday_columns,
+    _office_stats,
+    _ramadan_flags,
+    _weather_defaults,
+    _wmo_to_conditions,
+    build_features,
+    generate_features,
+    menu_fingerprint_from_frame,
+    regenerate_features_for_date,
+    roll_office_forward,
+    _next_operational_dates,
+    HISTORY_FILE,
+)
+
+DATA_DIR = ROOT / "data" / "processed"
+MODELS_DIR = ROOT / "models"
+
+HAS_MODELS = (MODELS_DIR / "office_presence_lgb.pkl").exists()
+HAS_TRAIN = (DATA_DIR / "features_train.csv").exists()
+
+pytestmark = pytest.mark.skipif(
+    not (HAS_MODELS and HAS_TRAIN),
+    reason="modèles / features d'entraînement absents",
+)
+
+
+@pytest.fixture()
+def history():
+    return pd.read_csv(HISTORY_FILE, parse_dates=["Date"])
+
+
+class TestNextOperationalDates:
+    """Les dates cibles des features ne comprennent QUE les journées de service
+    (dimanche → jeudi) : jamais de vendredi ni de samedi."""
+
+    def test_skips_friday_and_saturday(self):
+        # Jeudi 03/09/2026 → la prochaine journée est le dimanche 06/09/2026
+        dates = _next_operational_dates(pd.Timestamp("2026-09-03"), 2)
+        assert [d.dayofweek for d in dates] == [3, 6]  # jeudi, dimanche
+
+    def test_count_is_exact_and_all_operational(self):
+        dates = _next_operational_dates(pd.Timestamp("2026-09-04"), 10)
+        assert len(dates) == 10
+        assert all(d.dayofweek not in (4, 5) for d in dates)  # pas ven/sam
+
+    def test_includes_start_if_operational(self):
+        dates = _next_operational_dates(pd.Timestamp("2026-09-06"), 1)
+        assert dates[0] == pd.Timestamp("2026-09-06")  # dimanche, opérationnel
+
+
+class TestHolidayCalendar:
+    def test_ramadan_flags_2026(self):
+        dates = pd.date_range("2026-02-01", "2026-04-01", freq="D")
+        out = _ramadan_flags(dates)
+        assert (out.loc[out["is_ramadan"] == 1]["ramadan_day"] >= 1).all()
+        assert out.loc["2026-03-10", "is_ramadan"] == 1
+        assert out.loc["2026-03-20", "is_ramadan"] == 0
+
+    def test_holiday_columns_shape(self):
+        dates = pd.date_range("2026-08-01", "2026-08-31", freq="D")
+        out = _holiday_columns(dates)
+        assert list(out.columns) == [
+            "is_fr_holiday", "is_islamic_holiday", "is_algerian_holiday",
+            "is_any_holiday", "days_to_next_holiday",
+            "days_since_last_holiday", "near_holiday",
+        ]
+        assert set(out.index) == set(dates)
+
+
+class TestOfficeStats:
+    def test_returns_dow_stats(self, history):
+        stats = _office_stats(history)
+        assert 0.0 in stats["dow_mean"].index
+        assert 6.0 in stats["dow_mean"].index
+        # l'historique réel ne contient pas vendredi/samedi
+        assert 4.0 not in stats["dow_mean"].index
+        assert stats["global_mean"] > 0
+
+
+class TestRollOfficeForward:
+    def test_predicts_future_dates(self, history):
+        target_dates = pd.DatetimeIndex(
+            ["2026-01-05", "2026-01-06", "2026-01-07"]
+        )
+        out = roll_office_forward(history, target_dates)
+        assert len(out) == 3
+        assert out.notna().all()
+        assert all(p > 0 for p in out.values)
+        # les dates déjà observées sont laissées telles quelles
+        out_known = roll_office_forward(history, pd.DatetimeIndex(["2024-12-30"]))
+        assert len(out_known) == 0
+
+
+class TestWorkspace:
+    def test_weather_defaults_12_months(self, history):
+        defaults = _weather_defaults(history)
+        assert len(defaults) == 12
+
+    def test_fill_live_nans_fills_only_nans(self, history):
+        df = pd.DataFrame({
+            "office_present": [550.0, 600.0],
+            "op_dow_mean": [np.nan, 545.0],
+            "op_dow_std": [np.nan, 40.0],
+            "op_dow_median": [np.nan, 540.0],
+            "op_dow_zscore": [np.nan, 1.0],
+            "month_dow_ratio_mean": [np.nan, 0.6],
+            "dow_ratio_mean": [np.nan, 0.61],
+            "dow_ratio_median": [np.nan, 0.60],
+            "dow_ratio_std": [np.nan, 0.05],
+        })
+        out = _fill_live_nans(df.copy(), history)
+        assert out["op_dow_mean"].notna().all()
+        assert out["op_dow_zscore"].notna().all()
+        assert out.loc[1, "op_dow_mean"] == pytest.approx(545.0)
+
+
+class TestWmoToConditions:
+    """Le code WMO + cloud_cover -> la chaîne exacte utilisée par l'entraînement."""
+
+    def test_no_precip_clear_sky(self):
+        assert _wmo_to_conditions(0, 5.0) == "Clear"
+
+    def test_no_precip_partially_cloudy(self):
+        assert _wmo_to_conditions(1, 40.0) == "Partially cloudy"
+
+    def test_no_precip_overcast(self):
+        assert _wmo_to_conditions(2, 90.0) == "Overcast"
+
+    def test_rain_with_actual_precipitation(self):
+        # WMO 61 = pluie légère — mais seule une précipitation mesurée > 0 vaut
+        # "Rain" (cohérent avec precipitation_type du training).
+        assert _wmo_to_conditions(61, 10.0, precipitation_mm=1.5) == "Rain"
+        assert _wmo_to_conditions(61, 40.0, precipitation_mm=1.5) == "Rain, Partially cloudy"
+        assert _wmo_to_conditions(61, 90.0, precipitation_mm=1.5) == "Rain, Overcast"
+
+    def test_wmo_rain_without_outcome_is_cloudy(self):
+        # Brouillard (code 45) sans précipitation mesurée -> pas de "Rain".
+        assert _wmo_to_conditions(45, 60.0, precipitation_mm=0.0) == "Partially cloudy"
+
+    def test_zero_precip_with_rain_code_stays_cloudy(self):
+        # WMO signale de l'orage (95) mais aucune précipitation mesurée : ce n'est
+        # pas "Rain" car le training ne retient "rain" que si precipitation_mm > 0.
+        assert _wmo_to_conditions(95, 0.0, precipitation_mm=0.0) == "Clear"
+
+
+class TestOpenMeteoForecast:
+    """Le fetch Open-Meteo doit être robuste, même si le réseau est indisponible."""
+
+    def test_empty_dates_returns_none(self):
+        assert _fetch_open_meteo_forecast([]) is None
+
+    def test_wmo_fields_and_index(self):
+        fc = _fetch_open_meteo_forecast(
+            [pd.Timestamp("2026-09-02"), pd.Timestamp("2026-09-03")]
+        )
+        if fc is None:
+            pytest.skip("pas de réseau / réponse indisponible")
+        assert isinstance(fc.index, pd.DatetimeIndex)
+        assert len(fc) == 2
+        for col in ("temperature", "temperature_felt", "precipitation_mm",
+                    "wind_speed_kmh", "wind_gust_kmh", "cloud_cover_pct",
+                    "weather_conditions"):
+            assert col in fc.columns
+            assert fc[col].notna().all()
+        assert set(fc["weather_conditions"]) <= {
+            "Clear", "Partially cloudy", "Overcast",
+            "Rain", "Rain, Partially cloudy", "Rain, Overcast",
+        }
+        # rain label cohérent avec precipitation_mm
+        for cond, pm in zip(fc["weather_conditions"], fc["precipitation_mm"]):
+            assert ("Rain" in cond) == (pm > 0)
+
+
+class TestFidelityReproduction:
+    """Les features d'une date déjà observée doivent être IDENTIQUES au training."""
+
+    FIDELITY_DATE = "2024-12-30"
+    SAMPLE_COLS = [
+        "op_lag_7", "op_dow_mean", "op_annual_zscore", "yoy_ratio_5w",
+        "bridge_day", "is_any_holiday", "temp_cold", "heavy_rain",
+        "menu_is_traditional", "menu_is_premium", "plat1_te", "op_roll_mean_28",
+    ]
+
+    def test_in_history_matches_features_train(self, tmp_path, history):
+        train = pd.read_csv(DATA_DIR / "features_train.csv", parse_dates=["Date"])
+        out = generate_features(
+            target_dates=[pd.Timestamp(self.FIDELITY_DATE)],
+            history=history,
+            out_path=tmp_path / "live.csv",
+        )
+        row = train[train["Date"] == self.FIDELITY_DATE].iloc[0]
+        gen = out.iloc[0]
+        for col in self.SAMPLE_COLS:
+            a, b = gen[col], row[col]
+            both_nan = pd.isna(a) and pd.isna(b)
+            assert both_nan or pytest.approx(a, abs=1e-6) == b, col
+
+
+class TestTextFeatureConsistency:
+    """Les features texte (TF-IDF/SVD + target encoding) du serving doivent
+    reproduire EXACTEMENT celles de l'entraînement, via les transformeurs
+    persistés (plus aucun re-fit live -> pas de skew entraînement/serving)."""
+
+    def test_persisted_transformers_reproduce_training(self):
+        import pickle
+
+        from src.menu_optimization.menu_catalog_py import (
+            apply_menu_text_features,
+            fit_menu_text_features,
+        )
+
+        train = pd.read_csv(DATA_DIR / "features_train.csv")
+        dep = pickle.load(open(MODELS_DIR / "_deployment.pkl", "rb"))
+
+        assert "text_feats" in dep, "le bundle doit persister les transformeurs texte"
+        fitted = dep["text_feats"]
+
+        # Graph de contrôle : re-fitter sur l'entraînement donne un transformeur
+        # "identique" — mais surtout, appliquer les transformeurs persistés sur les
+        # mêmes lignes doit répliquer les colonnes stockées (pas de re-fit au serving).
+        out = apply_menu_text_features(train, fitted)
+
+        for col in ["plat1_te", "conditions_te"]:
+            assert col in out.columns
+            a = train[col].astype(float).values
+            b = out[col].astype(float).values
+            assert np.corrcoef(a, b)[0, 1] > 0.999, col
+
+        for i in range(8):
+            c = f"tfidf_svd_{i}"
+            a = train[c].astype(float).values
+            b = out[c].astype(float).values
+            assert np.corrcoef(a, b)[0, 1] > 0.999, c
+
+    def test_apply_handles_unseen_categories_with_global_fallback(self):
+        import pickle
+
+        from src.menu_optimization.menu_catalog_py import apply_menu_text_features
+
+        dep = pickle.load(open(MODELS_DIR / "_deployment.pkl", "rb"))
+        fitted = dep["text_feats"]
+
+        # une ligne avec un plat inconnu + menu vide doit retomber sur la moyenne
+        # globale (pas de crash, valeur finie).
+        df = pd.DataFrame({
+            "plat_principal_1": ["Plat totalement inconnu du catalogue"],
+            "plat_principal_2": [None],
+            "weather_conditions": ["condition_inconnue"],
+        })
+        out = apply_menu_text_features(df, fitted)
+        assert out["plat1_te"].iloc[0] == pytest.approx(fitted["plat1_global"], abs=1e-6)
+        assert out["tfidf_svd_0"].notna().all()
+
+
+
+    def test_output_schema_and_no_nans(self, tmp_path):
+        dep_cols = _deployment_feature_cols()
+        assert dep_cols and len(dep_cols) == 157
+        assert not any(c.startswith("kw_") for c in dep_cols)
+        out = generate_features(
+            target_dates=[pd.Timestamp("2026-09-02")],
+            out_path=tmp_path / "live.csv",
+        )
+        assert len(out) == 1
+        expect = {"Date", "office_present", "office_present_pred", "menu_fp"} | set(dep_cols)
+        assert set(out.columns) == expect
+        assert out.drop(columns=["Date", "menu_fp"]).isna().sum().sum() == 0
+        assert out["office_present_pred"].iloc[0] == pytest.approx(out["office_present"].iloc[0])
+        assert (Path(tmp_path) / "live.csv").exists()
+
+    def test_build_features_no_crash_full_history(self, history):
+        feats = build_features(history.copy())
+        assert len(feats) == len(history)
+        for col in _deployment_feature_cols():
+            assert col in feats.columns
+
+    def test_fidelity_check_via_concat(self, tmp_path, history):
+        """Le fichier live est le MÊME schéma que le train (concaténable)."""
+        live = generate_features(
+            target_dates=[pd.Timestamp("2026-09-03")],
+            history=history,
+            out_path=str(tmp_path / "live.csv"),
+        )
+        train = pd.read_csv(DATA_DIR / "features_train.csv", parse_dates=["Date"])
+        merged = pd.concat([live, train], axis=0)
+        # la date live est unique et le concat est possible sans collision
+        live_date = live["Date"].iloc[0]
+        assert (merged["Date"] == live_date).sum() == 1
+        assert merged.shape[0] == len(live) + len(train)
+
+
+class TestMenuFreshness:
+    """La prévision doit refléter le menu planifié : régénération ciblée des
+    features + empreinte pour la détection de prévision périmée."""
+
+    def test_menu_fingerprint_empty_when_no_menu(self):
+        assert menu_fingerprint_from_frame(None, "2026-09-03") == ""
+        empty = pd.DataFrame(columns=["date", "entrees", "plat_principal_1",
+                                      "plat_principal_2"])
+        assert menu_fingerprint_from_frame(empty, "2026-09-03") == ""
+
+    def test_menu_fingerprint_stable_and_distinct(self):
+        pm = pd.DataFrame([
+            {"date": pd.to_datetime("2026-09-03"), "entrees": "Salade",
+             "plat_principal_1": "Espadon en sauce", "plat_principal_2": "Riz pilaf",
+             "plat_principal_1_id": "espadon", "plat_principal_2_id": "riz-pilaf"},
+            {"date": pd.to_datetime("2026-09-04"), "entrees": "",
+             "plat_principal_1": "Couscous au poulet", "plat_principal_2": "Frite",
+             "plat_principal_1_id": "couscous", "plat_principal_2_id": "frite"},
+        ])
+        fp_sep3 = menu_fingerprint_from_frame(pm, "2026-09-03")
+        assert fp_sep3 != ""
+        # stable pour un même menu
+        assert menu_fingerprint_from_frame(pm, "2026-09-03") == fp_sep3
+        # différent suivant le menu
+        assert menu_fingerprint_from_frame(pm, "2026-09-04") != fp_sep3
+        # pas de menu ce jour-là
+        assert menu_fingerprint_from_frame(pm, "2026-01-01") == ""
+
+    def test_regenerate_recomputes_changed_date_and_backfills_fp(self, tmp_path, history):
+        import api.forecast as fc
+        from api.menus import MENUS_FILE
+
+        # sauvegarde l'état d'origine et les features live
+        orig_menus = MENUS_FILE.read_bytes() if MENUS_FILE.exists() else None
+        live_path = ROOT / "data" / "processed" / "features_live.csv"
+        orig_live = live_path.read_bytes() if live_path.exists() else None
+
+        try:
+            pd.DataFrame([
+                {"date": "2026-09-03", "entrees": "Salade",
+                 "plat_principal_1": "Espadon en sauce", "plat_principal_2": "Riz pilaf",
+                 "plat_principal_1_id": "espadon", "plat_principal_2_id": "riz-pilaf"},
+                {"date": "2026-09-04", "entrees": "",
+                 "plat_principal_1": "Couscous au poulet", "plat_principal_2": "Frite",
+                 "plat_principal_1_id": "couscous", "plat_principal_2_id": "frite"},
+            ]).to_csv(MENUS_FILE, index=False)
+
+            # génère une ligne live de référence pour 09-03 et 09-04
+            generate_features(
+                target_dates=[pd.Timestamp("2026-09-03"), pd.Timestamp("2026-09-04")],
+                history=history,
+                out_path=live_path,
+            )
+            before = pd.read_csv(live_path, parse_dates=["Date"])
+            assert "menu_fp" in before.columns
+
+            # le menu du 03 est un plat de POISSON
+            row_before = before[before["Date"].dt.normalize() == pd.Timestamp("2026-09-03")]
+            assert row_before["menu_poisson"].iloc[0] == 1
+            fp_before = row_before["menu_fp"].iloc[0]
+
+            # on change le menu du 03 en menu frit/boeuf, puis on régénère
+            pd.DataFrame([
+                {"date": "2026-09-03", "entrees": "",
+                 "plat_principal_1": "Sandwich frite", "plat_principal_2": "Boeuf bourguignon",
+                 "plat_principal_1_id": "sandwich-frite", "plat_principal_2_id": "boeuf"},
+                {"date": "2026-09-04", "entrees": "",
+                 "plat_principal_1": "Couscous au poulet", "plat_principal_2": "Frite",
+                 "plat_principal_1_id": "couscous", "plat_principal_2_id": "frite"},
+            ]).to_csv(MENUS_FILE, index=False)
+
+            ok = regenerate_features_for_date("2026-09-03")
+            assert ok
+
+            after = pd.read_csv(live_path, parse_dates=["Date"])
+            # le fichier conserve plusieurs dates, pas seulement la cible
+            assert len(after) >= 2
+            assert "menu_fp" in after.columns
+            # plus de NaN sur menu_fp (backfill global)
+            assert after["menu_fp"].notna().all()
+
+            row_after = after[after["Date"].dt.normalize() == pd.Timestamp("2026-09-03")]
+            # le menu frit a remplacé le poisson
+            assert row_after["menu_poisson"].iloc[0] == 0
+            assert row_after["menu_frite"].iloc[0] == 1
+            # l'empreinte a changé avec le menu
+            assert row_after["menu_fp"].iloc[0] != fp_before
+
+            # le cache in-process du forecasting est invalidé par la régénération
+            fc.reset_features_cache()
+            stored = fc.stored_menu_fingerprint("2026-09-03")
+            assert stored == row_after["menu_fp"].iloc[0]
+        finally:
+            if orig_live is not None:
+                live_path.write_bytes(orig_live)
+            if orig_menus is not None:
+                MENUS_FILE.write_bytes(orig_menus)
+            else:
+                MENUS_FILE.unlink(missing_ok=True)
+            fc.reset_features_cache()
+
+
+================================================================================
+FILE: tests\test_feature_engineering.py
+================================================================================
+
+"""Tests for src/feature_engineering/pipeline.py"""
+import numpy as np
+import pandas as pd
+import pytest
+from src.feature_engineering.pipeline import (
+    add_calendar_features,
+    add_holiday_features,
+    add_weather_features,
+    add_headcount_features,
+    add_lag_features,
+    build_feature_columns,
+    FINAL_EXCLUDE,
+    TARGET_COLS,
+    REF_COLS,
+)
+
+
+def _make_raw(n=50, start="2023-01-01"):
+    """Generate a minimal raw DataFrame mimicking the RIE dataset."""
+    dates = pd.bdate_range(start, periods=n, freq="B")
+    np.random.seed(42)
+    return pd.DataFrame({
+        "Date": dates,
+        "employees_count": np.random.randint(200, 400, n),
+        "office_present": np.random.randint(400, 600, n),
+        "office_departments": np.random.randint(40, 60, n),
+        "entrées": np.random.choice(["Salade, Soupe", "Pizza", ""], n),
+        "plat pricipal_1": np.random.choice(["Poulet riz", "Rechta", "Couscous"], n),
+        "plat principal_2": np.random.choice([np.nan, "Salade", ""], n),
+        "temperature": np.random.uniform(10, 35, n),
+        "temperature ressentie": np.random.uniform(10, 35, n),
+        "precipitation (mm)": np.random.uniform(0, 10, n),
+        "type precipitation": np.random.choice([np.nan, "pluie", "neige"], n),
+        "vitesse soulevement du vent (km/h)": np.random.uniform(0, 20, n),
+        "vitesse du vent(km/h)": np.random.uniform(0, 30, n),
+        "couverture nuageuse (%)": np.random.uniform(0, 100, n),
+        "conditions": np.random.choice(["clear", "rain", np.nan], n),
+        "year": dates.year.values,
+        "month": dates.month.values,
+        "day": dates.day.values,
+        "dayofweek": dates.dayofweek.values,
+        "weekofyear": dates.isocalendar().week.values.astype(int),
+        "is_weekend": np.zeros(n, dtype=int),
+    })
+
+
+class TestAddCalendarFeatures:
+    def test_adds_expected_columns(self):
+        df = _make_raw(20)
+        result = add_calendar_features(df)
+        for col in ["month_sin", "month_cos", "week_sin", "week_cos", "dow_sin", "dow_cos",
+                     "dayofweek", "month", "day", "weekofyear", "year", "quarter"]:
+            assert col in result.columns
+
+    def test_dayofweek_algerian(self):
+        df = _make_raw(20)
+        result = add_calendar_features(df)
+        assert result["dayofweek"].between(0, 6).all()
+
+    def test_preserves_row_count(self):
+        df = _make_raw(20)
+        result = add_calendar_features(df)
+        assert len(result) == 20
+
+
+class TestAddWeatherFeatures:
+    def test_adds_rain_and_zscore(self):
+        df = _make_raw(30)
+        result, _, _, _ = add_weather_features(df)
+        assert "has_rain" in result.columns
+        assert "temp_z" in result.columns
+        assert "temp_month_delta" in result.columns
+
+    def test_fit_on_train_apply_on_test(self):
+        train = _make_raw(30)
+        test = _make_raw(10, start="2023-06-01")
+        train_fitted, means, tmean, tstd = add_weather_features(train)
+        test_fitted, *_ = add_weather_features(test, means, tmean, tstd)
+        assert test_fitted["temp_z"].std() > 0
+
+    def test_preserves_index(self):
+        df = _make_raw(20).set_index("Date")
+        result, _, _, _ = add_weather_features(df)
+        assert len(result) == 20
+
+
+class TestAddHeadcountFeatures:
+    def test_ratio_computed(self):
+        df = _make_raw(20)
+        result = add_headcount_features(df)
+        assert "office_per_dept" in result.columns
+        assert result["office_per_dept"].notna().all()
+
+
+class TestAddLagFeatures:
+    def test_adds_lag_columns(self):
+        train = _make_raw(50)
+        test = _make_raw(10, start="2023-10-01")
+        train["ratio"] = train["employees_count"] / train["office_present"]
+        test["ratio"] = np.nan
+        train_out, test_out = add_lag_features(train, test)
+        for col in ["lag_7", "lag_14", "lag_28", "roll_mean_7", "roll_ratio_mean_7"]:
+            assert col in train_out.columns
+            assert col in test_out.columns
+
+    def test_no_nans_in_test_lags(self):
+        train = _make_raw(50)
+        test = _make_raw(10, start="2023-10-01")
+        train["ratio"] = train["employees_count"] / train["office_present"]
+        test["ratio"] = np.nan
+        _, test_out = add_lag_features(train, test)
+        lag_cols = ["lag_7", "lag_14", "lag_28",
+                     "roll_mean_7", "roll_mean_14", "roll_std_7", "roll_max_7",
+                     "lag_ratio_7", "roll_ratio_mean_7"]
+        assert test_out[lag_cols].isna().sum().sum() == 0
+
+
+class TestBuildFeatureColumns:
+    def test_excludes_targets_and_refs(self):
+        train = _make_raw(10)
+        train["ratio"] = 0.5
+        cols = build_feature_columns(train)
+        for c in TARGET_COLS + REF_COLS + list(FINAL_EXCLUDE):
+            assert c not in cols
+
+    def test_nonempty(self):
+        train = _make_raw(10)
+        train["ratio"] = 0.5
+        cols = build_feature_columns(train)
+        assert len(cols) > 0
+
+
+
+================================================================================
+FILE: tests\test_forecasting.py
+================================================================================
+
+"""
+Tests for src.forecasting.model — multi-alpha LightGBM + XGBoost ensemble.
+"""
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from src.forecasting.model import (
+    asymmetric_cost,
+    ratio_to_count,
+    evaluate,
+    prepare_matrices,
+    train_ensemble,
+    save_model,
+    load_model,
+    predict_ratio,
+    predict_count,
+    _build_ensemble_configs,
+    LGBM_ALPHAS,
+    LGBM_SEEDS,
+    XGB_ALPHAS,
+    XGB_SEEDS,
+)
+
+
+# ── asymmetric_cost ──────────────────────────────────────────────
+
+class TestAsymmetricCost:
+    def test_underprediction_penalized_2x(self):
+        cost = asymmetric_cost([10], [8])
+        assert cost == pytest.approx(0.4)
+
+    def test_exact_prediction_zero_cost(self):
+        assert asymmetric_cost([10, 20, 30], [10, 20, 30]) == 0.0
+
+    def test_overprediction_symmetric(self):
+        cost_over = asymmetric_cost([10], [12])
+        assert cost_over == pytest.approx(0.2)
+
+    def test_batch_normalization(self):
+        cost = asymmetric_cost([10, 10], [12, 8])
+        assert cost == pytest.approx(0.3)
+
+    def test_zero_true_values(self):
+        import math
+        cost = asymmetric_cost([0, 0], [1, 2])
+        assert math.isinf(cost)
+
+    def test_all_overestimation(self):
+        cost = asymmetric_cost([10, 10], [15, 15])
+        assert cost == pytest.approx(0.5)
+
+
+# ── ratio_to_count ───────────────────────────────────────────────
+
+class TestRatioToCount:
+    def test_basic_conversion(self):
+        assert ratio_to_count(np.array([0.65]), np.array([1000]))[0] == 650
+
+    def test_clips_negative_to_zero(self):
+        result = ratio_to_count(np.array([-0.5]), np.array([1000]))
+        assert result[0] == 0
+
+    def test_rounds_to_nearest_int(self):
+        result = ratio_to_count(np.array([0.653]), np.array([1000]))
+        assert result[0] == 653
+
+    def test_multiple_predictions(self):
+        ratios  = np.array([0.5, 0.7, 0.9])
+        offices = np.array([100, 200, 300])
+        result  = ratio_to_count(ratios, offices)
+        np.testing.assert_array_equal(result, [50, 140, 270])
+
+
+# ── evaluate ─────────────────────────────────────────────────────
+
+class TestEvaluate:
+    def test_perfect_prediction(self):
+        df = pd.DataFrame({"employees_count": [100, 200, 300]})
+        office = np.array([100, 200, 300])
+        y_ratio = df["employees_count"] / office
+        metrics = evaluate(y_ratio, y_ratio.values, office)
+        assert metrics["MAE (repas)"] == 0
+        assert metrics["Asym. Cost"] == 0.0
+
+    def test_returns_expected_keys(self):
+        df = pd.DataFrame({"employees_count": [100, 200]})
+        metrics = evaluate(df["employees_count"], np.array([0.9, 0.95]), np.array([100, 200]))
+        assert "MAE (repas)" in metrics
+        assert "RMSE (repas)" in metrics
+        assert "Asym. Cost" in metrics
+        assert "MAE (ratio)" in metrics
+
+
+# ── prepare_matrices ─────────────────────────────────────────────
+
+class TestPrepareMatrices:
+    def _make_df(self, n=50):
+        np.random.seed(42)
+        dates = pd.date_range("2023-01-01", periods=n, freq="D")
+        df = pd.DataFrame({
+            "Date": dates,
+            "office_present": 400 + np.random.randint(-10, 10, n),
+            "employees_count": np.random.randint(250, 380, n),
+            "temperature_2m_mean": np.random.uniform(5, 40, n),
+            "rain_sum": np.random.uniform(0, 20, n),
+            "lag_1": np.random.uniform(0.5, 1.0, n),
+            "lag_7": np.random.uniform(0.5, 1.0, n),
+            "conditions": np.random.choice(["Clear", "Rain", "Clouds"], n),
+            "type precipitation": np.random.choice(["none", "rain"], n),
+        })
+        df.index = dates
+        return df
+
+    def test_no_nans_after_preparation(self):
+        train_df = self._make_df(50)
+        test_df  = self._make_df(20)
+        feature_cols = ["temperature_2m_mean", "rain_sum", "lag_1", "lag_7", "conditions", "type precipitation"]
+        X_tr, y, X_te, office, cats = prepare_matrices(train_df, test_df, feature_cols)
+        assert X_tr.isna().sum().sum() == 0
+        assert X_te.isna().sum().sum() == 0
+
+    def test_shapes_consistent(self):
+        train_df = self._make_df(50)
+        test_df  = self._make_df(20)
+        feature_cols = ["temperature_2m_mean", "rain_sum", "lag_1", "lag_7", "conditions", "type precipitation"]
+        X_tr, y, X_te, office, cats = prepare_matrices(train_df, test_df, feature_cols)
+        assert len(X_tr) == len(y) == 50
+        assert len(X_te) == 20
+        assert len(office) == 20
+
+
+# ── ensemble config ──────────────────────────────────────────────
+
+class TestEnsembleConfigs:
+    def test_no_catboost(self):
+        configs = _build_ensemble_configs()
+        for name, _, _ in configs:
+            assert "CAT" not in name.upper()
+
+    def test_lgbm_alphas_centered(self):
+        assert 0.73 in LGBM_ALPHAS
+        assert all(0.60 <= a <= 0.85 for a in LGBM_ALPHAS)
+
+    def test_expected_model_count(self):
+        configs = _build_ensemble_configs()
+        expected = len(LGBM_ALPHAS) * len(LGBM_SEEDS) + len(XGB_ALPHAS) * len(XGB_SEEDS)
+        assert len(configs) == expected
+
+
+# ── predict interface ────────────────────────────────────────────
+
+class TestPredictInterface:
+    def test_predict_ratio_returns_float_array(self):
+        X = pd.DataFrame({"temperature_2m_mean": [10.0], "rain_sum": [0.0]})
+        dummy = type("D", (), {"predict": lambda self, x: np.array([0.72])})()
+        models = {"m1": dummy}
+        weights = {"m1": 1.0}
+        result = predict_ratio(X, models, weights)
+        assert isinstance(result, np.ndarray)
+        assert result[0] == pytest.approx(0.72)
+
+    def test_predict_count_returns_int_array(self):
+        X = pd.DataFrame({"temperature_2m_mean": [10.0]})
+        dummy = type("D", (), {"predict": lambda self, x: np.array([0.7])})()
+        models = {"m1": dummy}
+        weights = {"m1": 1.0}
+        result = predict_count(X, models, weights, np.array([400]))
+        assert result.dtype in [np.int32, np.int64]
+        assert result[0] == 280
+
+
+
+================================================================================
+FILE: tests\test_menu_cleaning.py
+================================================================================
+
+"""Tests for src/menu_optimization/menu_cleaning.py"""
+import pandas as pd
+import pytest
+from src.menu_optimization.menu_cleaning import (
+    strip_accents,
+    normalize_text,
+    split_composite,
+    clean_entrees,
+    categorize_dish,
+    extract_menu_features,
+)
+
+
+class TestStripAccents:
+    def test_basic_accents(self):
+        assert strip_accents("café") == "cafe"
+        assert strip_accents("résumé") == "resume"
+
+    def test_no_accents(self):
+        assert strip_accents("hello") == "hello"
+
+    def test_empty_string(self):
+        assert strip_accents("") == ""
+
+    def test_none_input(self):
+        result = strip_accents(None)
+        assert isinstance(result, str)
+
+
+class TestNormalizeText:
+    def test_lowercase_and_accents(self):
+        assert normalize_text("Café Résumé") == "cafe resume"
+
+    def test_collapse_whitespace(self):
+        assert normalize_text("  hello   world  ") == "hello world"
+
+    def test_apostrophes_to_space(self):
+        result = normalize_text("l'hotel d' Alger")
+        assert "'" not in result
+
+    def test_separators标准化(self):
+        result = normalize_text("riz / poulet")
+        assert " + " in result
+
+    def test_none_returns_empty(self):
+        assert normalize_text(None) == ""
+
+
+class TestSplitComposite:
+    def test_single_item(self):
+        assert split_composite("riz") == ["riz"]
+
+    def test_multiple_items(self):
+        result = split_composite("riz + poulet + legumes")
+        assert len(result) == 3
+
+    def test_empty_string(self):
+        assert split_composite("") == []
+
+
+class TestCleanEntrees:
+    def test_salade_soupe(self):
+        result = clean_entrees("Salade, Soupe")
+        assert result["entree_salade"] == 1
+        assert result["entree_soupe"] == 1
+        assert result["n_entree_choices"] == 2
+
+    def test_empty_input(self):
+        result = clean_entrees("")
+        assert result["n_entree_choices"] == 0
+        assert all(v == 0 for k, v in result.items() if k != "n_entree_choices")
+
+    def test_bourek_detected(self):
+        result = clean_entrees("Bourek")
+        assert result["entree_bourek"] == 1
+
+    def test_sale_detected(self):
+        result = clean_entrees("Pizza")
+        assert result["entree_sale"] == 1
+
+
+class TestCategorizeDish:
+    def test_poulet_grille(self):
+        result = categorize_dish("Poulet grille avec riz")
+        assert "poulet" in result["proteins"]
+        assert "grille" in result["cooking"]
+        assert "riz" in result["accompaniments"]
+
+    def test_empty_input(self):
+        result = categorize_dish("")
+        assert result["is_traditional"] is False
+        assert result["n_components"] == 0
+
+    def test_traditional_detection(self):
+        result = categorize_dish("Couscous au poulet")
+        assert result["is_traditional"] is True
+
+    def test_light_detection(self):
+        result = categorize_dish("Sandwich poulet")
+        assert result["is_light"] is True
+
+
+class TestExtractMenuFeatures:
+    @pytest.fixture
+    def sample_df(self):
+        return pd.DataFrame({
+            "entrées": ["Salade, Soupe", "Pizza", None],
+            "plat pricipal_1": ["Poulet grille + riz", "Rechta au poulet", "Couscous"],
+            "plat principal_2": [None, "Salade", None],
+            "Date": pd.date_range("2023-01-01", periods=3),
+        })
+
+    def test_returns_correct_shape(self, sample_df):
+        result = extract_menu_features(sample_df)
+        assert len(result) == 3
+        assert result.shape[1] == 24
+
+    def test_has_expected_columns(self, sample_df):
+        result = extract_menu_features(sample_df)
+        expected_cols = [
+            "has_2nd_plat", "is_menu_chef", "menu_is_traditional", "menu_is_light",
+            "menu_poulet", "entree_salade", "entree_soupe", "n_entree_choices",
+        ]
+        for col in expected_cols:
+            assert col in result.columns
+
+    def test_has_2nd_plat_detected(self, sample_df):
+        result = extract_menu_features(sample_df)
+        assert result["has_2nd_plat"].iloc[1] == 1
+        assert result["has_2nd_plat"].iloc[0] == 0
+
+    def test_preserves_index(self, sample_df):
+        result = extract_menu_features(sample_df)
+        pd.testing.assert_index_equal(result.index, sample_df.index)
+
+
+
+================================================================================
+FILE: tests\test_operational_calendar.py
+================================================================================
+
+"""Tests du calendrier opérationnel canonique (dimanche -> jeudi)."""
+from datetime import date
+
+from src.operational_calendar import (
+    is_operational_day,
+    next_operational_day,
+    previous_operational_day,
+    iso_next_operational_day,
+    dow_label,
+    OPERATIONAL_DOWS,
+    NON_OPERATIONAL_DOWS,
+)
+
+
+def test_operational_dows_constants():
+    # Python weekday: Lundi=0 ... Dimanche=6
+    assert OPERATIONAL_DOWS == {0, 1, 2, 3, 6}
+    assert NON_OPERATIONAL_DOWS == {4, 5}
+
+
+def test_is_operational_day_calendar_days():
+    # 3 septembre 2026 = jeudi (jour travaillé)
+    assert is_operational_day(date(2026, 9, 3)) is True
+    # 4 septembre 2026 = vendredi (fermé)
+    assert is_operational_day(date(2026, 9, 4)) is False
+    # 5 septembre 2026 = samedi (fermé)
+    assert is_operational_day(date(2026, 9, 5)) is False
+    # 6 septembre 2026 = dimanche (travaillé)
+    assert is_operational_day(date(2026, 9, 6)) is True
+
+
+def test_next_operational_day_thursday_to_sunday():
+    # Jeudi 3 septembre 2026 -> Dimanche 6 septembre 2026 (PAS vendredi/samedi)
+    assert next_operational_day(date(2026, 9, 3)) == date(2026, 9, 6)
+
+
+def test_next_operational_day_full_cycle():
+    # Mercredi -> Jeudi
+    assert next_operational_day(date(2026, 9, 2)) == date(2026, 9, 3)
+    # Vendredi -> Dimanche
+    assert next_operational_day(date(2026, 9, 4)) == date(2026, 9, 6)
+    # Samedi -> Dimanche
+    assert next_operational_day(date(2026, 9, 5)) == date(2026, 9, 6)
+    # Dimanche -> Lundi
+    assert next_operational_day(date(2026, 9, 6)) == date(2026, 9, 7)
+    # Lundi -> Mardi
+    assert next_operational_day(date(2026, 9, 7)) == date(2026, 9, 8)
+    # Jeudi -> Dimanche (never Friday)
+    assert next_operational_day(date(2026, 9, 10)) == date(2026, 9, 13)
+
+
+def test_next_operational_day_never_friday_or_saturday():
+    # Quel que soit le point de départ, le résultat ne doit jamais être un
+    # vendredi(4)/samedi(5).
+    for day in range(2, 10):  # du 2 au 9 sept 2026
+        result = next_operational_day(date(2026, 9, day)).weekday()
+        assert result in (0, 1, 2, 3, 6), f"Résultat invalide (weekday={result})"
+
+
+def test_previous_operational_day():
+    # Dimanche 6 septembre -> Jeudi 3 septembre (vendredi/samedi exclus)
+    assert previous_operational_day(date(2026, 9, 6)) == date(2026, 9, 3)
+    # Jeudi -> Mercredi
+    assert previous_operational_day(date(2026, 9, 3)) == date(2026, 9, 2)
+    # Lundi -> Dimanche
+    assert previous_operational_day(date(2026, 9, 7)) == date(2026, 9, 6)
+
+
+def test_iso_variant_returns_string():
+    assert iso_next_operational_day(date(2026, 9, 3)) == "2026-09-06"
+    assert isinstance(iso_next_operational_day("2026-09-03"), str)
+
+
+def test_accepts_iso_string_input():
+    assert is_operational_day("2026-09-03") is True
+    assert next_operational_day("2026-09-03") == date(2026, 9, 6)
+
+
+def test_dow_label():
+    assert dow_label(date(2026, 9, 3)) == "Jeudi"
+    assert dow_label(date(2026, 9, 6)) == "Dimanche"
+
+
+
+================================================================================
+FILE: tests\test_optimizer.py
+================================================================================
+
+"""Tests for src/menu_optimization/optimizer.py"""
+import pytest
+from src.menu_optimization.optimizer import (
+    score_menu,
+    estimate_waste_risk,
+    optimize_menu,
+)
+
+
+class TestScoreMenu:
+    def test_positive_features_increase_score(self):
+        menu = {"entree_sale": 1, "has_2nd_plat": 1, "menu_poulet": 1}
+        score = score_menu(menu)
+        assert score > 0
+
+    def test_negative_features_decrease_score(self):
+        menu = {"menu_is_traditional": 1, "menu_gratin": 1}
+        score = score_menu(menu)
+        assert score < 0
+
+    def test_empty_menu_zero_score(self):
+        score = score_menu({})
+        assert score == 0.0
+
+    def test_known_top_feature(self):
+        menu1 = {"entree_sale": 1}
+        menu2 = {"menu_poulet": 1}
+        s1 = score_menu(menu1)
+        s2 = score_menu(menu2)
+        assert s1 > s2  # entree_sale has higher correlation
+
+
+class TestEstimateWasteRisk:
+    def test_fish_higher_risk(self):
+        risk_fish = estimate_waste_risk({"menu_poisson": 1}, 300)
+        risk_chicken = estimate_waste_risk({"menu_poulet": 1}, 300)
+        assert risk_fish > risk_chicken
+
+    def test_traditional_lower_risk(self):
+        risk_trad = estimate_waste_risk({"menu_is_traditional": 1}, 300)
+        risk_none = estimate_waste_risk({}, 300)
+        # Both may be 0.0 after clipping, so just verify traditional doesn't increase risk
+        assert risk_trad <= risk_none
+
+    def test_bounded(self):
+        risk = estimate_waste_risk({"menu_poisson": 1, "menu_salade": 1}, 500)
+        assert 0.0 <= risk <= 1.0
+
+    def test_higher_count_higher_risk(self):
+        low = estimate_waste_risk({"menu_poisson": 1}, 100)
+        high = estimate_waste_risk({"menu_poisson": 1}, 500)
+        assert high > low
+
+
+class TestOptimizeMenu:
+    def test_selects_best_within_budget(self):
+        menus = [
+            {"name": "A", "features": {"entree_sale": 1, "menu_poulet": 1}, "cost_per_meal": 350},
+            {"name": "B", "features": {"menu_is_traditional": 1}, "cost_per_meal": 300},
+        ]
+        result = optimize_menu(300, 200_000, menus)
+        assert result["name"] == "A"
+        assert result["cost_total"] <= 200_000
+
+    def test_skips_over_budget(self):
+        menus = [
+            {"name": "expensive", "features": {}, "cost_per_meal": 1000},
+            {"name": "cheap", "features": {"entree_sale": 1}, "cost_per_meal": 300},
+        ]
+        result = optimize_menu(300, 200_000, menus)
+        assert result["name"] == "cheap"
+
+    def test_empty_menus(self):
+        result = optimize_menu(300, 100_000, [])
+        assert result["name"] is None
+
+    def test_all_over_budget_picks_cheapest(self):
+        menus = [
+            {"name": "A", "features": {}, "cost_per_meal": 1000},
+            {"name": "B", "features": {}, "cost_per_meal": 800},
+        ]
+        result = optimize_menu(300, 100_000, menus)
+        assert result["name"] == "B"
+        assert "warning" in result
+
+    def test_returns_expected_keys(self):
+        menus = [{"name": "X", "features": {"menu_poulet": 1}, "cost_per_meal": 350}]
+        result = optimize_menu(200, 100_000, menus)
+        assert "name" in result
+        assert "score" in result
+        assert "cost_total" in result
+        assert "waste_risk" in result
+
+
+
+================================================================================
+FILE: tests\test_planner.py
+================================================================================
+
+"""Tests for src/procurement/planner.py"""
+import pytest
+from src.procurement.planner import (
+    compute_ingredient_quantities,
+    format_procurement_order,
+)
+
+
+class TestComputeIngredientQuantities:
+    def test_basic_poulet_menu(self):
+        menu = {"menu_poulet": 1, "entree_salade": 1}
+        result = compute_ingredient_quantities(300, menu)
+        assert "poulet" in result
+        assert "riz" in result
+        assert "legumes" in result
+        assert "salade" in result
+        assert result["poulet"]["meals"] == 300
+
+    def test_safety_margin_applied(self):
+        menu = {"menu_poulet": 1}
+        result_no_margin = compute_ingredient_quantities(100, menu, safety_margin=0.0)
+        result_with_margin = compute_ingredient_quantities(100, menu, safety_margin=0.10)
+        assert result_with_margin["poulet"]["grams"] > result_no_margin["poulet"]["grams"]
+
+    def test_safety_margin_default(self):
+        menu = {"menu_poulet": 1}
+        result = compute_ingredient_quantities(100, menu)
+        assert result["poulet"]["margin"] == 0.05
+
+    def test_empty_menu_provides_defaults(self):
+        result = compute_ingredient_quantities(100, {})
+        assert len(result) > 0
+        assert "viande" in result or "riz" in result
+
+    def test_negative_count_still_works(self):
+        menu = {"menu_poulet": 1}
+        result = compute_ingredient_quantities(0, menu)
+        assert result["poulet"]["grams"] == 0
+
+    def test_kg_conversion(self):
+        menu = {"menu_poulet": 1}
+        result = compute_ingredient_quantities(100, menu)
+        grams = result["poulet"]["grams"]
+        kg = result["poulet"]["kg"]
+        assert kg == pytest.approx(grams / 1000, abs=0.01)
+
+    def test_poisson_menu(self):
+        menu = {"menu_poisson": 1}
+        result = compute_ingredient_quantities(200, menu)
+        assert "poisson" in result
+
+    def test_traditional_menu(self):
+        menu = {"menu_is_traditional": 1}
+        result = compute_ingredient_quantities(200, menu)
+        assert len(result) > 0
+
+
+class TestFormatProcurementOrder:
+    def test_returns_string(self):
+        menu = {"menu_poulet": 1}
+        quantities = compute_ingredient_quantities(300, menu)
+        output = format_procurement_order(quantities)
+        assert isinstance(output, str)
+        assert "Commande" in output
+        assert "TOTAL" in output
+
+
+
+================================================================================
+FILE: tests\test_waste_tracking.py
+================================================================================
+
+"""Tests for src/waste_tracking/tracker.py"""
+import tempfile
+import os
+import pandas as pd
+import pytest
+from src.waste_tracking.tracker import (
+    log_daily_waste,
+    load_waste_log,
+    append_waste_entry,
+    waste_summary,
+    detect_anomalies,
+    compute_feedback_signal,
+)
+
+
+class TestLogDailyWaste:
+    def test_basic_logging(self):
+        entry = log_daily_waste("2023-06-01", 300, 280)
+        assert entry["waste"] == 20
+        assert entry["waste_rate"] == pytest.approx(0.0667, abs=0.001)
+
+    def test_zero_prepared(self):
+        entry = log_daily_waste("2023-06-01", 0, 0)
+        assert entry["waste"] == 0
+        assert entry["waste_rate"] == 0.0
+
+    def test_menu_stored(self):
+        entry = log_daily_waste("2023-06-01", 300, 280, menu="Poulet riz")
+        assert entry["menu"] == "Poulet riz"
+
+    def test_negative_waste(self):
+        entry = log_daily_waste("2023-06-01", 200, 250)
+        assert entry["waste"] == -50
+
+
+class TestLoadWasteLog:
+    def test_nonexistent_file(self):
+        df = load_waste_log("/tmp/nonexistent_file.csv")
+        assert df.empty
+        assert list(df.columns) == ["date", "prepared", "served", "waste", "waste_rate", "menu"]
+
+
+class TestAppendWasteEntry:
+    def test_creates_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "waste.csv")
+            entry = log_daily_waste("2023-06-01", 300, 280)
+            df = append_waste_entry(path, entry)
+            assert len(df) == 1
+            assert os.path.exists(path)
+
+    def test_appends_multiple(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "waste.csv")
+            e1 = log_daily_waste("2023-06-01", 300, 280)
+            e2 = log_daily_waste("2023-06-02", 310, 300)
+            append_waste_entry(path, e1)
+            df = append_waste_entry(path, e2)
+            assert len(df) == 2
+
+    def test_roundtrip_persistence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "waste.csv")
+            entry = log_daily_waste("2023-06-01", 300, 280, menu="Rechta")
+            append_waste_entry(path, entry)
+            loaded = load_waste_log(path)
+            assert loaded.iloc[0]["prepared"] == 300
+            assert loaded.iloc[0]["menu"] == "Rechta"
+
+
+class TestWasteSummary:
+    @pytest.fixture
+    def waste_df(self):
+        dates = pd.date_range("2023-06-01", periods=14, freq="D")
+        return pd.DataFrame({
+            "date": dates,
+            "prepared": [300] * 14,
+            "served": [280] * 14,
+            "waste": [20] * 14,
+            "waste_rate": [0.0667] * 14,
+            "menu": ["test"] * 14,
+        })
+
+    def test_weekly_summary(self, waste_df):
+        summary = waste_summary(waste_df, period="weekly")
+        assert len(summary) > 0
+        assert "total_waste" in summary.columns
+        assert "overall_waste_rate" in summary.columns
+
+    def test_monthly_summary(self, waste_df):
+        summary = waste_summary(waste_df, period="monthly")
+        assert len(summary) == 1
+        assert summary.iloc[0]["total_waste"] == 280
+
+    def test_empty_df(self):
+        summary = waste_summary(pd.DataFrame(), period="weekly")
+        assert summary.empty
+
+
+class TestDetectAnomalies:
+    def test_flags_high_waste(self):
+        df = pd.DataFrame({
+            "date": ["2023-06-01"],
+            "waste_rate": [0.35],
+            "prepared": [300],
+        })
+        flagged = detect_anomalies(df, threshold_rate=0.25)
+        assert len(flagged) == 1
+
+    def test_ignores_normal_waste(self):
+        df = pd.DataFrame({
+            "date": ["2023-06-01"],
+            "waste_rate": [0.10],
+            "prepared": [300],
+        })
+        flagged = detect_anomalies(df, threshold_rate=0.25)
+        assert len(flagged) == 0
+
+
+class TestComputeFeedbackSignal:
+    def test_insufficient_data(self):
+        df = pd.DataFrame({"date": [], "waste_rate": [], "prepared": []})
+        signal = compute_feedback_signal(df)
+        assert signal["bias_direction"] == "insufficient_data"
+
+    def test_balanced_signal(self):
+        df = pd.DataFrame({
+            "date": pd.date_range("2023-01-01", periods=30),
+            "waste_rate": [0.03] * 30,
+            "prepared": [300] * 30,
+        })
+        signal = compute_feedback_signal(df)
+        assert signal["bias_direction"] == "balanced"
+        assert signal["recommended_adjustment"] == 0
+
+    def test_over_prepares_signal(self):
+        df = pd.DataFrame({
+            "date": pd.date_range("2023-01-01", periods=30),
+            "waste_rate": [0.10] * 30,
+            "prepared": [300] * 30,
+        })
+        signal = compute_feedback_signal(df)
+        assert signal["bias_direction"] == "over_prepares"
+        assert signal["recommended_adjustment"] < 0
+
+
