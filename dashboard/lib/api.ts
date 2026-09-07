@@ -466,6 +466,12 @@ export const api = {
       const rows = entries
         .map((e) => {
           const forecast = e.forecast ?? 0;
+          // Employés prévus = prédiction de présence persistée à la planification
+          // (presence = forecast.officePresent). IMPORTANT : ce n'est PAS la
+          // prévision de repas — on ne copie jamais forecast ici.
+          const employeesCount = e.presence ?? 0;
+          const hasAttendance = employeesCount > 0;
+          const prepared = e.prepared ?? 0;
           const actual = e.served ?? 0;
           // L'écart prévision/réel n'est défini que si une prévision a bien été
           // persistée : sans elle, on n'invente aucune valeur.
@@ -485,9 +491,11 @@ export const api = {
           return {
             id: `hist-${e.date}`,
             date: e.date,
-            officePresent: e.presence ?? 0,
-            employeesCount: forecast,
+            officePresent: employeesCount,
+            employeesCount,
+            hasAttendance,
             forecast,
+            prepared,
             actual,
             ecart,
             errorPct,

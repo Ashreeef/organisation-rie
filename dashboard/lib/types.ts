@@ -97,9 +97,18 @@ export interface WasteSummary {
 export interface ForecastHistoryEntry {
   id: string;
   date: string;
+  // Employés prévus = prédiction de présence (persistée à la planification).
+  // Jamais recopiée depuis la prévision de repas.
   officePresent: number;
   employeesCount: number;
+  // Vrai si une prédiction de présence a réellement été persistée pour ce jour
+  // (sinon l'UI affiche "Non disponible" au lieu d'un 0 inventé).
+  hasAttendance: boolean;
+  // Prévision de repas attendue (sortie du modèle).
   forecast: number;
+  // Repas effectivement préparés par la cuisine (bilan).
+  prepared: number;
+  // Repas réellement servis/consommés (bilan).
   actual: number;
   ecart: number | null;
   errorPct: number | null;

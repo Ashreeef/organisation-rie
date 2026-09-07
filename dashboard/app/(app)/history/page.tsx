@@ -29,7 +29,7 @@ import { Download, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2 } from 'lucide-
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-type SortKey = 'date' | 'employeesCount' | 'forecast' | 'actual' | 'ecart' | 'errorPct';
+type SortKey = 'date' | 'employeesCount' | 'forecast' | 'prepared' | 'actual' | 'ecart' | 'errorPct';
 type SortDir = 'asc' | 'desc';
 
 const statusConfig = {
@@ -105,9 +105,9 @@ export default function HistoryPage() {
   }));
 
   const exportCSV = () => {
-    const headers = ['Date', 'Présence', 'Prévision', 'Réel', 'Écart', 'Erreur %', 'Statut'];
+    const headers = ['Date', 'Employés prévus', 'Prévision', 'Préparés', 'Réel', 'Écart', 'Écart %', 'Statut'];
     const rows = filtered.map((e) => [
-      e.date, e.employeesCount, e.forecast, e.actual, e.ecart, e.errorPct, e.status,
+      e.date, e.hasAttendance ? e.employeesCount : '', e.forecast, e.prepared, e.actual, e.ecart, e.errorPct, e.status,
     ]);
     const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -263,10 +263,13 @@ export default function HistoryPage() {
                   Date <SortIcon col="date" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('employeesCount')}>
-                  Employés <SortIcon col="employeesCount" />
+                  Employés prévus <SortIcon col="employeesCount" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('forecast')}>
                   Prévision <SortIcon col="forecast" />
+                </th>
+                <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('prepared')}>
+                  Préparés <SortIcon col="prepared" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('actual')}>
                   Réel <SortIcon col="actual" />
@@ -287,8 +290,11 @@ export default function HistoryPage() {
                   className="border-b border-border/50 transition-colors hover:bg-muted/30"
                 >
                   <td className="py-3 pr-4 capitalize text-foreground">{formatDate(entry.date)}</td>
-                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.employeesCount)}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">
+                    {entry.hasAttendance ? formatNumber(entry.employeesCount) : 'Non disponible'}
+                  </td>
                   <td className="py-3 pr-4 font-medium text-foreground">{formatNumber(entry.forecast)}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.prepared)}</td>
                   <td className="py-3 pr-4 text-muted-foreground">
                     {entry.hasForecast ? formatNumber(entry.actual) : formatNumber(entry.actual)}
                   </td>
