@@ -13,9 +13,7 @@
 ## Merge Requests
 
 - Toute Merge Request vers `dev` doit être **relue par une autre personne**
-  avant merge — même pour un changement qui semble trivial. Le bug qui nous a
-  coûté un score de 0.38 au hackathon (au lieu de 0.10) aurait été attrapé par
-  une review de 5 minutes.
+  avant merge — même pour un changement qui semble trivial.
 - Décrire dans la MR : ce qui change, pourquoi, comment c'est testé/validé
   (score OOF avant/après si c'est un changement de modèle).
 - Pas de notebook dans une Merge Request qui touche `src/` — si la logique

@@ -33,3 +33,6 @@ models/*.bin
 # Logs
 *.log
 mlruns/
+
+# Backup
+backups/

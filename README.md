@@ -46,12 +46,62 @@ critique.
 ## Setup local
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Ashreeef/organisation-rie.git
 cd rie-project
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+## Prévision live — génération quotidienne des features
+
+L'API (`api/forecast.py`) consomme en priorité `data/processed/features_live.csv`
+pour les dates futures ; à défaut elle bascule sur les features d'entraînement
+(`features_train.csv`), puis sur le repli calendaire.
+
+Générer les features des 14 prochains jours (normalement pris en charge par la
+tâche planifiée décrite ci-dessous) :
+
+```bash
+python -m src.forecasting.daily_features --days 14
+```
+
+Cela rejoue le sous-modèle `office_presence` de façon récursive (semantique de
+shift *en lignes*, identique aux notebooks 03/04) puis applique l'ingénierie de
+features du notebook 03 aux dates cibles. Pour une date déjà observée, les
+features produites sont **identiques** à `features_train.csv` (validation de
+fidélité dans `tests/test_daily_features.py`).
+
+Notes de production :
+- la météo et le menu des jours futurs sont inconnus → climatologies mensuelles
+  et menu vide (flags 0, TF-IDF « empty ») ;
+- les jours fériés (français, algériens et islamiques) et les fenêtres de
+  Ramadan viennent de `src/calendar_utils.py`, alimenté par la bibliothèque
+  `holidays` (`>= 0.99`) — aucune liste de dates manuelle ; les dates
+  islamiques futures (Aïd, Mawlid, ...) sont des estimations astronomiques qui
+  peuvent varier d'un jour selon le croissant lunaire observé ;
+- un retrain (nouveau `_deployment.pkl` / `office_presence_lgb.pkl`) doit être
+  suivi d'une régénération de `features_live.csv`.
+
+### Planification quotidienne (Windows)
+
+Le runner `scripts/run_daily_features.py` ajoute le logging
+(`data/logs/daily_features.log`), un journal JSON
+(`data/logs/daily_features_last_run.json`) et un code retour exploitable par le
+Planificateur de tâches :
+
+```powershell
+# installer la tâche quotidienne (06:00 par défaut)
+.\scripts\install_daily_task.ps1
+.\scripts\install_daily_task.ps1 -At 06:30 -Days 14
+
+# exécution de test immédiate ; retrait de la tâche
+.\scripts\install_daily_task.ps1 -RunNow
+.\scripts\install_daily_task.ps1 -Uninstall
+```
+
+La tâche (`RIE_df_daily_features`) est relancée si le PC était éteint
+(`StartWhenAvailable`) et redémarrée jusqu'à 3 fois en cas d'échec.
 
 ## Workflow Git
 
@@ -73,11 +123,10 @@ Voir `docs/CONTRIBUTING.md` pour le détail des conventions.
 ## Données
 
 **Aucune donnée réelle ne doit être commitée dans ce dépôt** — `data/` est
-dans `.gitignore`. Pendant que l'accès Domino (2 licences pour 4 personnes)
-se met en place :
+dans `.gitignore`. Pendant que l'accès Domino se met en place :
 
 - Les données réelles (badges, POS) restent dans l'environnement Domino sécurisé.
-- Le développement hors-Domino se fait sur les données du hackathon
+- Le développement hors-Domino se fait sur les données du hackathon ou les données non-sensibles
   (anonymisées, dans `data/raw/` en local, jamais poussées).
 - Une fois le code validé sur les données hackathon, il est porté et exécuté
   sur les données réelles par les personnes ayant accès à Domino.
