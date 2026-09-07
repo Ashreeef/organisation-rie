@@ -25,7 +25,7 @@ Usage:
 import time
 import hashlib
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -46,6 +46,7 @@ from .models import (
     PlannedMealsUpdate,
     BilanSubmission,
     SettingsUpdate,
+    HolidayInfo,
 )
 from .forecast import (
     predict_today,
@@ -502,7 +503,23 @@ def daily_context() -> list[dict]:
     return out
 
 
-@app.post("/api/menus", response_model=MenuPlan)
+@app.get("/api/context/holidays", response_model=list[HolidayInfo])
+def upcoming_holidays(days: int = 7, from_date: Optional[str] = None) -> list[HolidayInfo]:
+    """Jours fériés algériens dans les ``days`` prochains jours (aujourd'hui inclus).
+
+    Alimente la cloche de notifications du dashboard. Aucune date n'est codée
+    en dur : tout provient du calendrier unifié (src.calendar_utils, lib
+    ``holidays``). ``from_date`` = paramètre de test (excédent au jour réel).
+    """
+    days = max(1, min(int(days), 30))
+    start = date.fromisoformat(from_date) if from_date else date.today()
+    out: list[HolidayInfo] = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        name = holiday_name(d.isoformat())
+        if name:
+            out.append(HolidayInfo(date=d.isoformat(), name=name))
+    return out
 def create_menu(entry: MenuPlan):
     """Crée ou met à jour le menu planifié d'une date."""
     return MenuPlan(**upsert_menu(entry.model_dump()))

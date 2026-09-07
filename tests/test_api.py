@@ -358,3 +358,35 @@ class TestServiceClock:
         assert advance_status_by_time("bilan_a_saisir", self._at("13:35")) == "bilan_a_saisir"
         assert advance_status_by_time("bilan_a_confirmer", self._at("15:30")) == "bilan_a_confirmer"
         assert advance_status_by_time("cloturee", self._at("15:30")) == "cloturee"
+
+
+# ── Jours fériés à venir (notification cloche) ─────────────────────────
+
+class TestUpcomingHolidays:
+    @pytest.mark.skipif(
+        not (ROOT / "api" / "main.py").exists(),
+        reason="api.main indisponible",
+    )
+    def test_holiday_inside_window(self):
+        import api.main as main
+
+        rows = main.upcoming_holidays(days=7, from_date="2026-07-01")
+        assert {"date": "2026-07-05", "name": "Independence Day"} in [dict(r) for r in rows]
+
+    @pytest.mark.skipif(
+        not (ROOT / "api" / "main.py").exists(),
+        reason="api.main indisponible",
+    )
+    def test_empty_window_returns_no_holiday(self):
+        import api.main as main
+
+        assert main.upcoming_holidays(days=3, from_date="2026-09-01") == []
+
+    @pytest.mark.skipif(
+        not (ROOT / "api" / "main.py").exists(),
+        reason="api.main indisponible",
+    )
+    def test_days_clamped_to_30(self):
+        import api.main as main
+
+        assert len(main.upcoming_holidays(days=999, from_date="2026-07-01")) <= 30

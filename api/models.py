@@ -151,3 +151,8 @@ class SettingsResponse(BaseModel):
     service_start: str = "12:30"
     service_end: str = "13:30"
     bilan_deadline: str = "15:00"
+
+
+class HolidayInfo(BaseModel):
+    date: str
+    name: str

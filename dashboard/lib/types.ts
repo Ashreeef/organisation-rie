@@ -134,6 +134,11 @@ export interface DailyContext {
   weather: string;
 }
 
+export interface HolidayInfo {
+  date: string; // YYYY-MM-DD
+  name: string; // ex. "Eid al-Adha", "Independence Day"
+}
+
 export interface AppSettings {
   siteName: string;
   safetyMarginPct: number;

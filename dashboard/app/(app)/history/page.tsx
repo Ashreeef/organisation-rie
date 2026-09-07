@@ -112,7 +112,7 @@ export default function HistoryPage() {
   }));
 
   const exportCSV = () => {
-    const headers = ['Date', 'Employés prévus', 'Prévision', 'Préparés', 'Réel', 'Écart', 'Écart %', 'Statut', 'Menu', 'Météo'];
+    const headers = ['Date', 'Employés prévus', 'Recommandé', 'Préparés', 'Réel', 'Écart', 'Écart %', 'Statut', 'Menu', 'Météo'];
     const rows = filtered.map((e) => [
       e.date, e.hasAttendance ? e.employeesCount : '', e.forecast, e.prepared, e.actual,
       e.ecart != null ? e.ecart : '', e.errorPct != null ? e.errorPct : '', e.status,
@@ -288,7 +288,7 @@ export default function HistoryPage() {
                   Employés prévus <SortIcon col="employeesCount" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('forecast')}>
-                  Prévision <SortIcon col="forecast" />
+                  Recommandé <SortIcon col="forecast" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('prepared')}>
                   Préparés <SortIcon col="prepared" />

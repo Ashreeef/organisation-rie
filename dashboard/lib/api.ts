@@ -24,6 +24,7 @@ import type {
   ServiceStatus,
   TodayState,
   WeekForecastDay,
+  HolidayInfo,
 } from '@/lib/types';
 import { noForecast } from '@/lib/types';
 import { DISHES } from '@/lib/menu-catalog';
@@ -631,6 +632,16 @@ export const api = {
   async getDailyContext(): Promise<DailyContext[]> {
     try {
       return await apiGet<DailyContext[]>('/api/context/daily');
+    } catch {
+      return [];
+    }
+  },
+
+  /* ── Jours fériés à venir (notification cloche du header) ── */
+
+  async getUpcomingHolidays(days = 7): Promise<HolidayInfo[]> {
+    try {
+      return await apiGet<HolidayInfo[]>(`/api/context/holidays?days=${days}`);
     } catch {
       return [];
     }
