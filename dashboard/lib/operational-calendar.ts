@@ -85,3 +85,51 @@ export function nextOperationalDay(from: Date): Date {
   cursor.setHours(0, 0, 0, 0);
   return cursor;
 }
+
+/** Nombre de jours opérationnels couvrant 2 semaines de travail (Dim–Jeu × 2). */
+export const OPERATIONAL_WEEKS_COUNT = 10;
+
+/**
+ * Les `count` prochains jours opérationnels (Dimanche → Jeudi) à partir de
+ * `from`. `from` est inclus si opérationnel, sinon on commence au premier
+ * jour de service strictement après. Vendredi/samedi exclus.
+ *
+ * Miroir du backend src/forecasting/daily_features._next_operational_dates.
+ */
+export function nextOperationalDays(from: Date, count: number): Date[] {
+  const out: Date[] = [];
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  while (out.length < count) {
+    if (isWorkdayDow(cursor.getDay())) {
+      out.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+/**
+ * Derniers jours opérationnels passés (strictement antérieurs à `from`) dans
+ * une fenêtre rétrospective de `lookbackDays` jours calendaires. Sert à garder
+ * visibles les jours manqués sans les masquer silencieusement.
+ */
+export function pastOperationalDays(from: Date, lookbackDays: number): Date[] {
+  const out: Date[] = [];
+  const cursor = new Date(from);
+  cursor.setDate(cursor.getDate() - lookbackDays);
+  cursor.setHours(0, 0, 0, 0);
+  const fromKey = isoDate(from);
+  while (isoDate(cursor) < fromKey) {
+    if (isWorkdayDow(cursor.getDay())) {
+      out.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+/** Vrai si la date ISO correspond au jour courant (heure locale). */
+export function isToday(iso: string): boolean {
+  return iso === isoDate(new Date());
+}

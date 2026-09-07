@@ -434,10 +434,18 @@ export default function DashboardPage() {
               title="Prochaine journée de service"
               description={`${nextDayLabel}${menuHasContent(nextMenu) && nextForecast?.forecastAvailable ? ' — prévision disponible' : ''}`}
             />
+<div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
               Préparation
             </span>
+            <Link href="/forecasts">
+              <Button variant="ghost" size="sm" className="text-primary">
+                Voir toutes les prévisions
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Button>
+            </Link>
           </div>
+        </div>
 
           {menuHasContent(nextMenu) ? (
             <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">

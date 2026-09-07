@@ -40,9 +40,9 @@ def _write_features(df, tmp_path, name="features_live.csv"):
 
 class TestCalendar:
     def test_algerian_dow_week_sun_sat(self):
-        # 2026-09-07..13 = Lun..Dim
+        # 2026-09-07..13 = Lun..Dim ; convention date.weekday() : Lun=0..Dim=6
         dates = pd.date_range("2026-09-07", periods=7, freq="D")
-        expected = [1, 2, 3, 4, 5, 6, 0]
+        expected = [0, 1, 2, 3, 4, 5, 6]
         assert [f._algerian_dow(d) for d in dates] == expected
 
     def test_is_ramadan_window(self):
@@ -81,15 +81,17 @@ class TestPredictTodayCalendarOnly:
         assert res["confidence_level"] in ("high", "medium", "low")
 
     def test_ramadan_reduces_ratio(self):
-        # 2026-03-05 : jeudi (dow algérien 4 -> base 0.60) en Ramadan -> x0.85
+        # 2026-03-05 : jeudi (dow 3 -> base 0.59) en Ramadan -> x0.85
         res = f.predict_today("2026-03-05", office_present=350)
-        assert res["predicted_ratio"] == pytest.approx(0.60 * 0.85, abs=1e-6)
+        assert res["predicted_ratio"] == pytest.approx(0.59 * 0.85, abs=1e-6)
         assert "Ramadan" in res["recommendation_note"]
 
     def test_holiday_halves_ratio(self):
-        # Mawlid 2026-08-25 : mardi (dow 2 -> base 0.61) -> x0.50
+        # Mawlid 2026-08-25 : mardi (dow 1 -> base 0.57) -> x0.50 = 0.285,
+        # cependant borné par clip_lo ratio (0.30) appliqué dans le fallback
+        # calendaire → 0.30.
         res = f.predict_today("2026-08-25", office_present=350)
-        assert res["predicted_ratio"] == pytest.approx(0.61 * 0.50, abs=1e-6)
+        assert res["predicted_ratio"] == pytest.approx(0.30, abs=1e-6)
         assert "Jour ferie" in res["recommendation_note"]
 
     def test_non_operational_day_note(self):
@@ -105,17 +107,18 @@ class TestPredictTodayCalendarOnly:
         assert "Jour non travaillé" not in res["recommendation_note"]
 
     def test_office_dow_fallback_deterministic(self):
-        # Bundle de repli : dow_mean_actual {6:310, 0:295, 1:290, 2:300, 3:298}
-        d = pd.Timestamp("2026-09-01")  # mardi, dow algérien 2
-        assert f._office_dow_fallback(d) == pytest.approx(300.0)
+        # Bundle de repli : dow_mean_actual {6:310(dim), 0:295(lun), 1:290(mar),
+        # 2:300(mer), 3:298(jeu)} — clés date.weekday().
+        d = pd.Timestamp("2026-09-01")  # mardi, dow 1
+        assert f._office_dow_fallback(d) == pytest.approx(290.0)
         # Jour férié : divisé par deux mais borné par clip_lo (230)
-        hol = pd.Timestamp("2026-08-25")  # Mawlid, mardi -> 2 -> 150 -> clip 230
+        hol = pd.Timestamp("2026-08-25")  # Mawlid, mardi -> 290 -> 145 -> clip 230
         assert f._office_dow_fallback(hol) == pytest.approx(230.0)
 
     def test_predict_without_model_uses_dow_fallback(self):
         res = f.predict_today("2026-09-01")  # pas d'office explicite
-        assert res["office_present"] == 300  # dow_mean_actual[2]
-        assert f._predict_office_present(pd.Timestamp("2026-09-01")) == pytest.approx(300.0)
+        assert res["office_present"] == 290  # dow_mean_actual[1] (mardi)
+        assert f._predict_office_present(pd.Timestamp("2026-09-01")) == pytest.approx(290.0)
 
 
 # ── predict_today avec features (chemin live) ──────────────────────
@@ -167,6 +170,53 @@ class TestPredictTodayWithFeatures:
         assert f._office_from_features_row(row) is None
         row2 = pd.Series({"Date": "2026-09-01", "office_present_pred": 333})
         assert f._office_from_features_row(row2) == pytest.approx(333.0)
+
+
+# ── Prévisions horizon futur (14 jours) / jours non opérationnels ─
+#  Vérifie le comportement API : une date de service FUTURE sans menu planifié
+#  produit quand même une prévision réelle du modèle (replis du pipeline), et
+#  seuls vendredi/samedi sont marqués indisponibles.
+
+class TestForecastHorizonFutur:
+    def test_forecast_for_date_future_without_menu_is_unavailable(self, monkeypatch):
+        import api.main as main
+
+        # Isole le module API des fichiers réels : aucun menu planifié.
+        monkeypatch.setattr(main, "get_menu", lambda d: None)
+        monkeypatch.setattr(main, "_has_menu", lambda d: False)
+
+        # Dimanche 2026-09-20 = semaine suivante, SANS menu → aucune prévision.
+        # Le menu est le préalable obligatoire : sans menu, pas de prévision
+        # (aucun repli par moyenne historique).
+        fc = main._forecast_for_date("2026-09-20")
+        assert fc.forecast_available is False
+        assert fc.menu_planned is False
+        assert "Aucun menu planifié" in (fc.unavailable_reason or "")
+        assert fc.employees_count == 0
+
+    def test_forecast_for_date_with_menu_is_available(self, monkeypatch):
+        import api.main as main
+
+        # Simule un menu planifié → la prévision devient disponible.
+        monkeypatch.setattr(main, "get_menu", lambda d: {"date": d, "plat_principal_1": "Couscous"})
+        monkeypatch.setattr(main, "_has_menu", lambda d: True)
+
+        fc = main._forecast_for_date("2026-09-20")
+        assert fc.forecast_available is True
+        assert fc.menu_planned is True
+        assert fc.employees_count > 0
+        assert fc.recommended_meals >= fc.employees_count
+
+    def test_forecast_for_date_friday_is_unavailable(self, monkeypatch):
+        import api.main as main
+
+        monkeypatch.setattr(main, "get_menu", lambda d: None)
+        monkeypatch.setattr(main, "_has_menu", lambda d: False)
+
+        # Vendredi 2026-09-18 : jour non travaillé → indisponible (pas de service).
+        fc = main._forecast_for_date("2026-09-18")
+        assert fc.forecast_available is False
+        assert "Jour non travaillé" in (fc.unavailable_reason or "")
 
 
 # ── Intégration optionnelle (données réelles du repo) ──────────────

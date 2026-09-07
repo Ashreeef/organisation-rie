@@ -25,6 +25,14 @@ class TodayForecast(BaseModel):
     recommendation_note: str = ""
     forecast_stale: bool = False
     menu_fingerprint: str = ""
+    # Calendrier : la date est-elle en période de Ramadan / jour férié algérien ?
+    # Sert à la page /forecasts (drapeaux spéciaux + fiabilité affichée).
+    is_ramadan: bool = False
+    is_holiday: bool = False
+    holiday_name: Optional[str] = None
+    # Un menu est-il planifié pour cette date ? Quand faux, la prévision n'est
+    # pas disponible : le manager doit d'abord planifier le menu.
+    menu_planned: bool = True
 
 
 class TodayForecastRequest(BaseModel):

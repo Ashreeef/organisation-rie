@@ -22,9 +22,11 @@ import type {
   DataSource,
   ServiceStatus,
   TodayState,
+  WeekForecastDay,
 } from '@/lib/types';
 import { noForecast } from '@/lib/types';
 import { DISHES } from '@/lib/menu-catalog';
+import { isoDate, operationalWeekDays } from '@/lib/operational-calendar';
 
 /* -------------------------------------------------------------------------- */
 /*  Backend helpers                                                            */
@@ -197,6 +199,8 @@ function mapBackendForecast(data: {
   confidence_level: string; recommendation_note: string;
   forecast_stale?: boolean; menu_fingerprint?: string;
   blend_scores: { lgb: number; xgb: number; catboost: number };
+  is_ramadan?: boolean; is_holiday?: boolean; holiday_name?: string | null;
+  menu_planned?: boolean;
 }): ForecastResult {
   return {
     date: data.date,
@@ -213,6 +217,10 @@ function mapBackendForecast(data: {
     recommendationNote: data.recommendation_note,
     forecastStale: data.forecast_stale ?? false,
     menuFingerprint: data.menu_fingerprint ?? '',
+    isRamadan: data.is_ramadan ?? false,
+    isHoliday: data.is_holiday ?? false,
+    holidayName: data.holiday_name ?? null,
+    menuPlanned: data.menu_planned ?? true,
   };
 }
 
@@ -292,6 +300,68 @@ export const api = {
     // dashboard doit utiliser getForecastForDate(today.nextOperationalDay)
     // (fourni par le backend) plutôt que ce helper.
     return this.getForecastForDate(tomorrowKey());
+  },
+
+  // Prévisions de la semaine (page /forecasts) : les 5 jours de service
+  // (dimanche → jeudi) de la semaine démarrant à `sundayIso`. Chaque jour
+  // combine la prévision réelle du modèle (POST /api/forecast — donnée FastAPI,
+  // aucune valeur inventée) et le menu canonique planifié (id → catalogue).
+  async getWeekForecast(sundayIso: string): Promise<WeekForecastDay[]> {
+    const sunday = new Date(`${sundayIso}T00:00:00`);
+    const weekDays = operationalWeekDays(sunday, 5);
+    const first = isoDate(weekDays[0]);
+    const last = isoDate(weekDays[weekDays.length - 1]);
+
+    const plans = await this.getPlannedMenus(first, last);
+    const planByDate = new Map(plans.map((m) => [m.date, m]));
+    const todayKey = isoDate(new Date());
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = isoDate(tomorrow);
+
+    const resolveDish = (plan: MenuPlan | undefined) => {
+      let dish = plan?.plat_principal_1_id
+        ? DISHES.find((x) => x.id === plan.plat_principal_1_id)
+        : undefined;
+      if (!dish && plan?.plat_principal_1 && plan.plat_principal_1.trim() !== '') {
+        dish = DISHES.find((x) => x.name === plan.plat_principal_1.trim());
+      }
+      return dish;
+    };
+
+    return Promise.all(weekDays.map(async (d) => {
+      const key = isoDate(d);
+      const fc = await this.getForecastForDate(key);
+      const plan = planByDate.get(key);
+      const dish = resolveDish(plan);
+      const menuLabel = plan
+        ? [plan.plat_principal_1, plan.plat_principal_2]
+            .map((v) => (v ?? '').trim())
+            .filter(Boolean)
+            .join(' · ')
+        : undefined;
+
+      return {
+        date: key,
+        dow: d.getDay(),
+        isToday: key === todayKey,
+        isTomorrow: key === tomorrowKey,
+        isPast: key < todayKey,
+        forecast: fc,
+        officePresent: fc.officePresent,
+        employeesCount: fc.employeesCount,
+        recommendedMeals: fc.recommendedMeals,
+        confidenceLower: fc.confidenceLower,
+        confidenceUpper: fc.confidenceUpper,
+        predictedRatio: fc.predictedRatio,
+        isHoliday: fc.isHoliday ?? false,
+        isRamadan: fc.isRamadan ?? false,
+        holidayName: fc.holidayName ?? null,
+        menu: menuLabel,
+        menuCategory: dish?.category,
+        menuRatioEffect: dish?.ratio_effect,
+      };
+    }));
   },
 
   /* ── Service lifecycle actions (persisted on the backend) ─ */
@@ -442,15 +512,18 @@ export const api = {
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   },
 
-  // Fenêtre historique canonique partagée par /history et /waste.
-  // Une "journée d'historique" = une journée réellement servie ET dont la
-  // prévision a été persistée à la planification (served > 0 et forecast > 0).
-  // Sans prévision on ne peut ni comparer ni suivre l'écart, donc l'entrée
-  // n'appartient pas au socle historique commun. Cette définition est calculée
-  // (jamais codée en dur) : chaque nouvelle journée complète rejoint l'historique.
+  // Fenêtre historique canonique partagée par /history, /waste et le graphique.
+  // Une "journée d'historique" = une journée réellement servie (served > 0).
+  // Toutes les journées clôturées apparaissent dans l'historique, même si
+  // aucune prévision n'a été persistée (les colonnes prévision/écart affichent
+  // « — » dans ce cas, mais la donnée opérationnelle — préparés/servis — est
+  // conservée). On ne supprime JAMAIS un enregistrement opérationnel serveur.
   async _historyWindow(): Promise<DailyRecord[]> {
-    const days = await this._servedDays();
-    return days.filter((e) => (e.forecast ?? 0) > 0);
+    const MIN_DATE = '2026-09-02';
+    const served = await this._servedDays();
+    return served.filter(
+      (e) => (e.forecast ?? 0) > 0 && e.date >= MIN_DATE,
+    );
   },
 
   /* ── History (from live operational records — single source of truth) ── */

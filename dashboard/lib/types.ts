@@ -38,6 +38,14 @@ export interface ForecastResult {
   forecastStale?: boolean;
   // Fingerprint of the menu used to compute this forecast.
   menuFingerprint?: string;
+  // Calendrier : drapeaux Ramadan / jour férié (fournis par le backend) — la
+  // page /forecasts les affiche et ajuste la fiabilité affichée.
+  isHoliday?: boolean;
+  isRamadan?: boolean;
+  holidayName?: string | null;
+  // Un menu est-il planifié pour cette date ? Quand faux, aucune prévision
+  // n'est disponible (le menu est le préalable obligatoire du calcul).
+  menuPlanned?: boolean;
 }
 
 // A forecast that could not be produced (e.g. no planned menu for the date).
@@ -243,4 +251,30 @@ export interface NavItem {
 export interface NavSection {
   title: string;
   items: NavItem[];
+}
+
+// Jour de prévision hebdomadaire (page /forecasts) — agrégat d'une prévision
+// modèle + le menu canonique planifié (id → catalogue) + drapeaux calendrier.
+export interface WeekForecastDay {
+  date: string; // YYYY-MM-DD
+  dow: number; // getDay() JS : Dimanche=0 … Jeudi=4
+  isToday: boolean;
+  isTomorrow: boolean;
+  isPast: boolean;
+  // Prévision brute du modèle (real FastAPI data). Si aucun menu n'est planifié
+  // pour la date, forecastAvailable=false et les comptes valent 0.
+  forecast: ForecastResult;
+  officePresent: number;
+  employeesCount: number;
+  recommendedMeals: number;
+  confidenceLower: number;
+  confidenceUpper: number;
+  predictedRatio: number;
+  isHoliday: boolean;
+  isRamadan: boolean;
+  holidayName?: string | null;
+  // Menu planifié (texte) et attributs canoniques du plat principal.
+  menu?: string;
+  menuCategory?: string;
+  menuRatioEffect?: string;
 }

@@ -293,11 +293,11 @@ export default function HistoryPage() {
                   <td className="py-3 pr-4 text-muted-foreground">
                     {entry.hasAttendance ? formatNumber(entry.employeesCount) : 'Non disponible'}
                   </td>
-                  <td className="py-3 pr-4 font-medium text-foreground">{formatNumber(entry.forecast)}</td>
-                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.prepared)}</td>
-                  <td className="py-3 pr-4 text-muted-foreground">
-                    {entry.hasForecast ? formatNumber(entry.actual) : formatNumber(entry.actual)}
+                  <td className="py-3 pr-4 font-medium text-foreground">
+                    {entry.hasForecast ? formatNumber(entry.forecast) : '—'}
                   </td>
+                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.prepared)}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">{formatNumber(entry.actual)}</td>
                   <td className={cn(
                     'py-3 pr-4 font-medium',
                     entry.ecart != null && entry.ecart > 0 ? 'text-destructive' : entry.ecart != null && entry.ecart < 0 ? 'text-success' : 'text-muted-foreground'

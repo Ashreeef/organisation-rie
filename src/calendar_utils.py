@@ -24,7 +24,7 @@ septembre).
 from __future__ import annotations
 
 import functools
-from typing import Iterable, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 
 import holidays as hol
 import pandas as pd
@@ -166,3 +166,16 @@ def is_public_holiday(date: DateLike) -> bool:
     """Vrai si ``date`` est un jour férié algérien (fixe ou islamique)."""
     d = pd.Timestamp(date)
     return d in algerian_public_dates([d.year])
+
+
+def holiday_name(date: DateLike) -> Optional[str]:
+    """Nom anglophone simple du jour férié algérien tombant sur ``date`` (None sinon).
+
+    Ex. ``"Eid al-Fitr"``, ``"Independence Day"``, ``"Prophet's Birthday"``.
+    """
+    d = pd.Timestamp(date)
+    by_name = _algeria_dates_by_name((d.year,))
+    for name, dates in by_name.items():
+        if d in dates:
+            return name
+    return None

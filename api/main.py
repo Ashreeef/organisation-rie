@@ -28,6 +28,8 @@ import logging
 from datetime import date, datetime
 from typing import Optional
 
+import pandas as pd
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -52,7 +54,8 @@ from .forecast import (
 )
 from .operations import get_today_entry, save_entry, get_all_entries
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
-from src.operational_calendar import iso_next_operational_day
+from src.operational_calendar import iso_next_operational_day, is_operational_day
+from src.calendar_utils import holiday_name, is_public_holiday, is_ramadan
 
 app = FastAPI(
     title="RIE BNP Paribas Forecasting API",
@@ -111,23 +114,48 @@ def _has_menu(date_str: str) -> bool:
                for c in ("entrees", "plat_principal_1", "plat_principal_2"))
 
 
-def _unavailable_forecast(date_str: str) -> TodayForecast:
+def _unavailable_forecast(date_str: str, reason: str) -> TodayForecast:
+    """Prévision indisponible pour une date — uniquement pour les cas où une
+    prévision n'a réellement aucun sens (jour non opérationnel : vendredi/samedi).
+
+    Un jour de service (dimanche → jeudi) SANS menu planifié n'utilise PAS ce
+    chemin : le pipeline fournit une prévision via ses replis (moyennes
+    historiques, calendrier, features sans menu) — ``menu_planned=False``.
+    """
+    d = pd.Timestamp(date_str)
+    holiday = is_public_holiday(d)
     return TodayForecast(
         date=date_str,
         forecast_available=False,
-        unavailable_reason="Le menu de cette journée n'est pas renseigné.",
+        unavailable_reason=reason,
+        is_ramadan=is_ramadan(d),
+        is_holiday=holiday,
+        holiday_name=holiday_name(d) if holiday else None,
+        menu_planned=False,
     )
 
 
 def _forecast_for_date(date_str: str, office_present: Optional[int] = None) -> TodayForecast:
-    """Retourne la prévision pour une date — mais uniquement si un menu est planifié.
+    """Prévision du modèle pour une date de service (Dimanche → Jeudi).
 
-    La prévision dépend du menu (features texte → intensité → ratio). Sans menu,
-    il n'y a pas de prévision valide : on renvoie un état explicite
-    ``forecast_available=False`` plutôt qu'un calcul tiré de nulle part.
+    Un menu planifié est PRÉALABLE à toute prévision. Sans menu, la prévision
+    est marquée indisponible : le manager doit d'abord planifier le menu pour
+    que le modèle puisse calculer les quantités.
+
+    Seuls les jours NON opérationnels (vendredi/samedi — pas de service) sont
+    marqués indisponibles avec une raison spécifique.
     """
+    d = pd.Timestamp(date_str)
+    if not is_operational_day(d):
+        return _unavailable_forecast(
+            date_str,
+            reason="Jour non travaillé (vendredi/samedi) — pas de service.",
+        )
     if not _has_menu(date_str):
-        return _unavailable_forecast(date_str)
+        return _unavailable_forecast(
+            date_str,
+            reason="Aucun menu planifié pour cette date — veuillez d'abord planifier le menu.",
+        )
     try:
         result = predict_today(
             target_date=date_str,
@@ -136,6 +164,7 @@ def _forecast_for_date(date_str: str, office_present: Optional[int] = None) -> T
         model = _to_forecast_model(result)
         model.forecast_stale = _is_forecast_stale(date_str)
         model.menu_fingerprint = _current_menu_fingerprint(date_str)
+        model.menu_planned = True
         return model
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
@@ -180,6 +209,9 @@ def _to_forecast_model(data: dict) -> TodayForecast:
         confidence_upper=data["confidence_upper"],
         confidence_level=data["confidence_level"],
         recommendation_note=data["recommendation_note"],
+        is_ramadan=bool(data.get("is_ramadan", False)),
+        is_holiday=bool(data.get("is_holiday", False)),
+        holiday_name=data.get("holiday_name"),
     )
 
 

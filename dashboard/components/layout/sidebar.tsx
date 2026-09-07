@@ -13,6 +13,7 @@ import {
   History,
   Settings,
   CalendarDays,
+  ChartBar,
   ChevronLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   History,
   Settings,
   CalendarDays,
+  ChartBar,
 };
 
 interface SidebarProps {

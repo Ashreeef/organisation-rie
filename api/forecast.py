@@ -17,7 +17,7 @@ from typing import Optional
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.calendar_utils import algerian_public_dates, ramadan_ranges  # noqa: E402
+from src.calendar_utils import algerian_public_dates, ramadan_ranges, holiday_name  # noqa: E402
 from src.operational_calendar import is_operational_day  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -256,6 +256,9 @@ def predict_today(
         "confidence_upper": count_int + spread,
         "confidence_level": "high" if spread <= 18 else "medium" if spread <= 28 else "low",
         "recommendation_note": notes,
+        "is_ramadan": _is_ramadan(d),
+        "is_holiday": _is_holiday(d),
+        "holiday_name": holiday_name(d) if _is_holiday(d) else None,
     }
     
     logger.info(f"Final prediction: {count_int} employees ({recommended} recommended), ratio={ratio_pred:.3f}")
@@ -394,8 +397,14 @@ def _predict_ratio_calendar_only(dep: dict, d: pd.Timestamp, op_pred: float) -> 
 # --- Calendar helpers ---
 
 def _algerian_dow(d: pd.Timestamp) -> int:
-    """Algerian work week: Sun=6, Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5"""
-    return (d.dayofweek + 1) % 7
+    """Jour de la semaine au sens ``date.weekday()`` (Python) : Lundi=0 …
+    Dimanche=6 — la convention utilisée par le XXL ``dow_mean_actual`` /
+    ``offsets`` / ``dow_defaults`` du déploiement (issus de l'historique réel,
+    colonne ``dow`` du notebook 03). Dimanche=6, Lundi=0, Mardi=1, Mercredi=2,
+    Jeudi=3, Vendredi=4, Samedi=5. Vendredi/samedi (4, 5) ne sont pas des jours
+    de service : les dictionnaires du déploiement ne les contiennent pas.
+    """
+    return d.dayofweek
 
 
 def _is_ramadan(d: pd.Timestamp) -> bool:
