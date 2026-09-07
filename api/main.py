@@ -45,6 +45,7 @@ from .models import (
     LifecycleStatusUpdate,
     PlannedMealsUpdate,
     BilanSubmission,
+    SettingsUpdate,
 )
 from .forecast import (
     predict_today,
@@ -52,8 +53,15 @@ from .forecast import (
     reset_features_cache,
     stored_menu_fingerprint,
 )
-from .operations import get_today_entry, save_entry, get_all_entries
+from .operations import (
+    get_today_entry,
+    save_entry,
+    get_all_entries,
+    advance_status_by_time,
+    derive_service_phase,
+)
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
+from .settings import load_settings, save_settings
 from src.operational_calendar import iso_next_operational_day, is_operational_day
 from src.calendar_utils import holiday_name, is_public_holiday, is_ramadan
 
@@ -217,15 +225,27 @@ def _to_forecast_model(data: dict) -> TodayForecast:
 
 @app.get("/api/operations/today", response_model=OperationalResponse)
 def operations_today():
-    """Get today's operational data + forecast."""
+    """Get today's operational data + forecast.
+
+    Le statut persistant est avancé automatiquement par l'horloge (Horaire du
+    service de /settings) : à l'heure de début -> "service", à l'heure de fin
+    -> "bilan_a_saisir". Jamais de retour en arrière, jamais au-delà de
+    "bilan_a_saisir" (saisie et clôture restent des actes manuels).
+    """
     today = date.today().isoformat()
-    forecast = _forecast_for_date(today)
+    settings = load_settings()
+    phase = derive_service_phase()
     operational = get_today_entry(today)
+    if operational is not None:
+        advanced = advance_status_by_time(operational.get("status", "preparation"))
+        if advanced != operational.get("status"):
+            operational["status"] = advanced
+            save_entry(operational)
     entry = OperationalEntry(**operational) if operational else None
     return OperationalResponse(
         date=today,
         status="active",
-        forecast=forecast,
+        forecast=_forecast_for_date(today),
         operational=entry,
         # Source unique de vérité (calendrier opérationnel canonique) :
         # le bilan est clos uniquement quand le statut vaut 'cloturee'.
@@ -233,6 +253,11 @@ def operations_today():
         # Prochaine journée de service (dimanche -> jeudi ; jamais vendredi/
         # samedi). L'UI n'a pas à recalculer ceci.
         next_operational_day=iso_next_operational_day(today),
+        # Horloge du service : phase dérivée + horaires (source = /settings).
+        service_phase=phase,
+        service_start=settings["service_start"],
+        service_end=settings["service_end"],
+        bilan_deadline=settings["bilan_deadline"],
     )
 
 
@@ -358,6 +383,22 @@ def model_metrics():
     """Get model info and metrics."""
     info = get_model_info()
     return ModelMetricsResponse(**info)
+
+
+# ---------------------------------------------------------------------------
+# Paramètres d'application (marge de sécurité, horaires)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/settings", response_model=dict)
+def get_settings() -> dict:
+    """Réglages actuels (fusionnés avec les défauts)."""
+    return load_settings()
+
+
+@app.put("/api/settings", response_model=dict)
+def put_settings(update: SettingsUpdate) -> dict:
+    """Met à jour partiellement les réglages, retourne l'état complet."""
+    return save_settings(update.model_dump(exclude_none=True))
 
 
 # ---------------------------------------------------------------------------

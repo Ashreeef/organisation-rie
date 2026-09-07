@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Bell, Globe } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -62,19 +62,6 @@ export function Header({ title, description }: HeaderProps) {
         </div>
 
         <div className="h-6 w-px bg-border" />
-
-        {/* Language selector */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Globe className="h-4 w-4 text-muted-foreground" />
-                <span className="sr-only">Langue</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>FR / EN</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
 
         {/* Sync status */}
         <div className="hidden items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 md:flex">

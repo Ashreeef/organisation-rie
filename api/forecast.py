@@ -268,8 +268,8 @@ def predict_today(
 
     # --- Confidence interval ---
     spread = max(10, int(round(op_pred * 0.045)))
-    safety = 0.06 if _is_ramadan(d) else 0.04
-    recommended = int(round(count_int * (1 + safety)))
+    # Marge de sécurité : % configurable dans /settings (+2 pts en Ramadan).
+    recommended = int(round(count_int * (1 + _safety_margin(d))))
 
     # --- Blend scores (for diagnostics) ---
     bw = dep.get("best_blend_w", [0.02, 0.09, 0.89])
@@ -299,6 +299,20 @@ def predict_today(
     
     logger.info(f"Final prediction: {count_int} employees ({recommended} recommended), ratio={ratio_pred:.3f}")
     return result
+
+
+def _safety_margin(d: pd.Timestamp) -> float:
+    """Marge de sécurité configurable (paramètres serveur) pour les repas à
+    préparer : ``safety_margin_pct`` (défaut 4 %, /settings). Aucun ajustement
+    automatique — les jours sans service (vendredi/samedi, et pendant le Ramadan
+    où la cantine est fermée) ne produisent pas de prévision exploitable ici.
+    """
+    try:
+        from api.settings import load_settings
+        margin = float(load_settings().get("safety_margin_pct", 4.0)) / 100.0
+    except Exception:
+        margin = 0.04
+    return margin
 
 
 def _office_from_features_row(row: pd.Series) -> Optional[float]:

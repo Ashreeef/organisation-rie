@@ -17,6 +17,7 @@ import type {
   MenuPlan,
   ForecastHistoryEntry,
   DailyContext,
+  AppSettings,
   ModelMetrics,
   ModelFamily,
   DataSource,
@@ -69,6 +70,16 @@ async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  return res.json();
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Date formatting helpers                                                    */
 /* -------------------------------------------------------------------------- */
@@ -113,6 +124,11 @@ function mapStatus(s: string | undefined): ServiceStatus {
   return allowed.includes(s as ServiceStatus) ? (s as ServiceStatus) : 'preparation';
 }
 
+function mapPhase(s: string | undefined): TodayState['servicePhase'] {
+  const allowed = ['before', 'during', 'after', 'late'];
+  return allowed.includes(s as string) ? (s as TodayState['servicePhase']) : 'before';
+}
+
 let _today: TodayState | null = null;
 
 function setCachedToday(state: TodayState): TodayState {
@@ -127,6 +143,10 @@ async function fetchTodayState(): Promise<TodayState> {
       status: string;
       bilan_closed?: boolean;
       next_operational_day?: string;
+      service_phase?: string;
+      service_start?: string;
+      service_end?: string;
+      bilan_deadline?: string;
       operational: {
         status?: string;
         planned_meals?: number;
@@ -171,6 +191,11 @@ async function fetchTodayState(): Promise<TodayState> {
       // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
       bilanClosed: Boolean(res.bilan_closed),
       nextOperationalDay: res.next_operational_day || todayKey(),
+      // Horloge du service — valeurs calculées par le backend depuis /settings.
+      servicePhase: mapPhase(res.service_phase),
+      serviceStart: res.service_start ?? '12:30',
+      serviceEnd: res.service_end ?? '13:30',
+      bilanDeadline: res.bilan_deadline ?? '15:00',
     });
   } catch {
     return setCachedToday({
@@ -183,6 +208,10 @@ async function fetchTodayState(): Promise<TodayState> {
       bilan: null,
       bilanClosed: false,
       nextOperationalDay: todayKey(),
+      servicePhase: 'before',
+      serviceStart: '12:30',
+      serviceEnd: '13:30',
+      bilanDeadline: '15:00',
     });
   }
 }
@@ -368,6 +397,13 @@ export const api = {
 
   async getTodayState(): Promise<TodayState> {
     return _today ?? (await fetchTodayState());
+  },
+
+  // Rafraîchit l'état du jour depuis le réseau (contourne le cache), pour les
+  // écrans qui poll l'horloge du service (ex. /dashboard) : getTodayState()
+  // renverrait sinon la copie figée du premier chargement.
+  async refreshTodayState(): Promise<TodayState> {
+    return fetchTodayState();
   },
 
   async getStatus(): Promise<ServiceStatus> {
@@ -791,5 +827,47 @@ export const api = {
       console.error('Failed to submit operation:', err);
       return { success: false };
     }
+  },
+
+  /* ── App settings (backend-persisted) ───────────────────── */
+
+  async getSettings(): Promise<AppSettings> {
+    const raw = await apiGet<{
+      site_name: string;
+      safety_margin_pct: number;
+      service_start: string;
+      service_end: string;
+      bilan_deadline: string;
+    }>('/api/settings');
+    return {
+      siteName: raw.site_name ?? 'Siège — Alger',
+      safetyMarginPct: Number(raw.safety_margin_pct ?? 4.0),
+      serviceStart: raw.service_start ?? '12:30',
+      serviceEnd: raw.service_end ?? '13:30',
+      bilanDeadline: raw.bilan_deadline ?? '15:00',
+    };
+  },
+
+  async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+    const body: Record<string, unknown> = {};
+    if (patch.siteName != null) body.site_name = patch.siteName;
+    if (patch.safetyMarginPct != null) body.safety_margin_pct = patch.safetyMarginPct;
+    if (patch.serviceStart != null) body.service_start = patch.serviceStart;
+    if (patch.serviceEnd != null) body.service_end = patch.serviceEnd;
+    if (patch.bilanDeadline != null) body.bilan_deadline = patch.bilanDeadline;
+    const raw = await apiPut<{
+      site_name: string;
+      safety_margin_pct: number;
+      service_start: string;
+      service_end: string;
+      bilan_deadline: string;
+    }>('/api/settings', body);
+    return {
+      siteName: raw.site_name ?? 'Siège — Alger',
+      safetyMarginPct: Number(raw.safety_margin_pct ?? 4.0),
+      serviceStart: raw.service_start ?? '12:30',
+      serviceEnd: raw.service_end ?? '13:30',
+      bilanDeadline: raw.bilan_deadline ?? '15:00',
+    };
   },
 };

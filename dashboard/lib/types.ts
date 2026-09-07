@@ -134,6 +134,14 @@ export interface DailyContext {
   weather: string;
 }
 
+export interface AppSettings {
+  siteName: string;
+  safetyMarginPct: number;
+  serviceStart: string;
+  serviceEnd: string;
+  bilanDeadline: string;
+}
+
 export interface ModelMetrics {
   version: string;
   lastTrainingDate: string;
@@ -207,7 +215,16 @@ export interface TodayState {
   // Fournie par le backend (calendrier opérationnel canonique). L'UI ne fait
   // PAS de "date + 1 jour" pour la calculer.
   nextOperationalDay: string;
+  // Horloge du service (source unique : backend, depuis /settings) :
+  // "before" | "during" | "after" | "late". L'UI ne calcule jamais ces
+  // valeurs elle-même — elle les reçoit telles quelles de /api/operations/today.
+  servicePhase: ServicePhase;
+  serviceStart: string; // "HH:MM"
+  serviceEnd: string; // "HH:MM"
+  bilanDeadline: string; // "HH:MM"
 }
+
+export type ServicePhase = 'before' | 'during' | 'after' | 'late';
 
 export interface OperationalEntry {
   id: string;

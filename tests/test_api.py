@@ -258,3 +258,103 @@ class TestIntegrationRealData:
         assert "°C" in by_date["2026-09-07"]["weather"]
         # Une date sans ligne de features renvoie une météo vide, jamais inventée.
         assert any(r["weather"] == "" for r in rows)
+
+
+class TestSettings:
+    @pytest.fixture(autouse=True)
+    def _isolate_settings(self, tmp_path, monkeypatch):
+        import api.settings as s
+
+        monkeypatch.setattr(s, "SETTINGS_FILE", tmp_path / "settings.json")
+        s.reset_settings_cache()
+        yield
+        s.reset_settings_cache()
+
+    def test_defaults_filled(self):
+        import api.settings as s
+
+        settings = s.load_settings()
+        assert settings["safety_margin_pct"] == 4.0
+        assert settings["bilan_deadline"] == "15:00"
+        assert settings["site_name"] == "Siège — Alger"
+
+    def test_save_persists_and_returns_full_state(self):
+        import api.settings as s
+
+        s.save_settings({"safety_margin_pct": 8.0})
+        assert s.load_settings()["safety_margin_pct"] == 8.0
+
+    def test_site_name_persists(self):
+        import api.settings as s
+
+        s.save_settings({"site_name": "Agence Bab Ezzouar"})
+        assert s.load_settings()["site_name"] == "Agence Bab Ezzouar"
+
+    def test_unknown_keys_ignored(self):
+        import api.settings as s
+
+        s.save_settings({"foo": 123, "safety_margin_pct": 6.0})
+        settings = s.load_settings()
+        assert "foo" not in settings
+        assert settings["safety_margin_pct"] == 6.0
+
+    def test_predict_uses_configured_margin(self, monkeypatch):
+        # 2026-09-07 = lundi non-Ramadan : recommended = count * (1 + margin).
+        import api.settings as s
+        from api import main as main_mod
+
+        monkeypatch.setattr(main_mod, "_has_menu", lambda d: True)
+        monkeypatch.setattr(main_mod, "get_menu",
+                            lambda d: {"date": d, "plat_principal_1": "Couscous"})
+        s.save_settings({"safety_margin_pct": 10.0})
+        fc = main_mod._forecast_for_date("2026-09-07")
+        assert fc.forecast_available is True
+        if fc.recommended_meals is not None:
+            assert fc.recommended_meals == round(fc.employees_count * 1.10)
+
+
+# ── Horloge du service (derive_service_phase / advance_status_by_time) ──
+
+class TestServiceClock:
+    @pytest.fixture(autouse=True)
+    def _isolate_settings(self, tmp_path, monkeypatch):
+        import api.settings as s
+
+        monkeypatch.setattr(s, "SETTINGS_FILE", tmp_path / "settings.json")
+        s.reset_settings_cache()
+        yield
+        s.reset_settings_cache()
+
+    def _at(self, hhmm):
+        from datetime import datetime
+
+        h, m = map(int, hhmm.split(":"))
+        return datetime(2026, 9, 7, h, m)
+
+    def test_phase_before_during_after_late(self):
+        from api.operations import derive_service_phase
+
+        # Défauts : 12:30 / 13:30 / 15:00
+        assert derive_service_phase(self._at("11:00")) == "before"
+        assert derive_service_phase(self._at("12:30")) == "during"
+        assert derive_service_phase(self._at("13:29")) == "during"
+        assert derive_service_phase(self._at("13:30")) == "after"
+        assert derive_service_phase(self._at("14:59")) == "after"
+        assert derive_service_phase(self._at("15:00")) == "late"
+
+    def test_advance_forward_only(self):
+        from api.operations import advance_status_by_time
+
+        # Avant le début : rien ne bouge, jamais de retour en arrière.
+        assert advance_status_by_time("preparation", self._at("11:00")) == "preparation"
+        assert advance_status_by_time("service", self._at("11:00")) == "service"
+        assert advance_status_by_time("bilan_a_saisir", self._at("11:00")) == "bilan_a_saisir"
+        # Pendant le service : preparation -> service.
+        assert advance_status_by_time("preparation", self._at("12:45")) == "service"
+        # Fin atteinte : service -> bilan_a_saisir.
+        assert advance_status_by_time("service", self._at("13:35")) == "bilan_a_saisir"
+        assert advance_status_by_time("preparation", self._at("13:35")) == "bilan_a_saisir"
+        # Les étapes manuelles ne sont JAMAIS franchies automatiquement.
+        assert advance_status_by_time("bilan_a_saisir", self._at("13:35")) == "bilan_a_saisir"
+        assert advance_status_by_time("bilan_a_confirmer", self._at("15:30")) == "bilan_a_confirmer"
+        assert advance_status_by_time("cloturee", self._at("15:30")) == "cloturee"
