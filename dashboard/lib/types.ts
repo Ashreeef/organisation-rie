@@ -122,6 +122,16 @@ export interface ForecastHistoryEntry {
   errorPct: number | null;
   hasForecast: boolean;
   status: 'bon' | 'acceptable' | 'mauvais';
+  // Contexte "données réelles" (utilisé uniquement pour l'export CSV) :
+  // menu planifié et météo du jour, vides si indisponibles.
+  menu?: string;
+  weather?: string;
+}
+
+export interface DailyContext {
+  date: string;
+  menu: string;
+  weather: string;
 }
 
 export interface ModelMetrics {

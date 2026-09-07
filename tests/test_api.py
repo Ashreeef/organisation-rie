@@ -240,3 +240,21 @@ class TestIntegrationRealData:
         day = live.iloc[0]
         res = f.predict_today(str(day["Date"].date()))
         assert res["office_present"] == int(round(day["office_present_pred"]))
+
+    @pytest.mark.skipif(
+        not (ROOT / "api" / "main.py").exists(),
+        reason="api.main indisponible",
+    )
+    def test_daily_context_merges_menu_and_weather(self):
+        # Export CSV de /history : menu réellement planifié + météo live.
+        import api.main as main
+
+        rows = main.daily_context()
+        by_date = {r["date"]: r for r in rows}
+        assert "2026-09-07" in by_date
+        # Menu du 07/09 planifié dans planned_menus.csv (source de vérité).
+        assert "Tagliatelles" in by_date["2026-09-07"]["menu"]
+        # Météo du 07/09 présente dans features_live.csv.
+        assert "°C" in by_date["2026-09-07"]["weather"]
+        # Une date sans ligne de features renvoie une météo vide, jamais inventée.
+        assert any(r["weather"] == "" for r in rows)

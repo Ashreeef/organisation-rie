@@ -14,9 +14,9 @@ import type {
   ForecastResult,
   ForecastVsActualPoint,
   WasteDay,
-  WasteSummary,
   MenuPlan,
   ForecastHistoryEntry,
+  DailyContext,
   ModelMetrics,
   ModelFamily,
   DataSource,
@@ -534,7 +534,11 @@ export const api = {
     // journée clôturée (bilan saisi) devient une entrée. Prévision = forecast
     // persévéré à la planification; réel = servis enregistrés au bilan.
     try {
-      const entries = await this._historyWindow();
+      const [entries, context] = await Promise.all([
+        this._historyWindow(),
+        this.getDailyContext(),
+      ]);
+      const ctxByDate = new Map(context.map((c) => [c.date, c]));
 
       const rows = entries
         .map((e) => {
@@ -574,10 +578,23 @@ export const api = {
             errorPct,
             hasForecast,
             status,
+            menu: ctxByDate.get(e.date)?.menu ?? e.menuLabel ?? '',
+            weather: ctxByDate.get(e.date)?.weather ?? '',
           };
         });
 
       return delay(rows);
+    } catch {
+      return [];
+    }
+  },
+
+  // Contexte "données réelles" par jour (menu planifié + météo), uniquement
+  // utilisé par l'export CSV de /history. Les jours sans données renvoient des
+  // chaînes vides — jamais de valeurs inventées.
+  async getDailyContext(): Promise<DailyContext[]> {
+    try {
+      return await apiGet<DailyContext[]>('/api/context/daily');
     } catch {
       return [];
     }
@@ -605,27 +622,6 @@ export const api = {
         }));
     } catch {
       return [];
-    }
-  },
-
-  async getWasteSummary(): Promise<WasteSummary> {
-    try {
-      const days = await this._historyWindow();
-      const recent = days.filter((e) => (e.prepared ?? 0) > 0);
-      if (recent.length === 0) return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
-      const totalPrepared = recent.reduce((s, e) => s + (e.prepared ?? 0), 0);
-      const totalServed = recent.reduce((s, e) => s + (e.served ?? 0), 0);
-      const totalWasted = recent.reduce((s, e) => s + (e.waste ?? 0), 0);
-      const avgWasteRate = totalPrepared > 0 ? Math.round((totalWasted / totalPrepared) * 1000) / 10 : 0;
-      return {
-        prepared: totalPrepared,
-        served: totalServed,
-        wasted: totalWasted,
-        wasteRate: avgWasteRate,
-        trend: { direction: 'down', value: `- ${recent.length} jours`, label: 'données réelles' },
-      };
-    } catch {
-      return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
     }
   },
 

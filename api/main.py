@@ -379,6 +379,88 @@ def read_menu(date: str):
     return MenuPlan(**m)
 
 
+@app.get("/api/context/daily", response_model=list[dict])
+def daily_context() -> list[dict]:
+    """Menu + météo par jour (source de l'export CSV de l'historique).
+
+    Menu  : planned_menus.csv — le plat réellement planifié par le gestionnaire
+            (source de vérité : menu → features → prévision).
+    Météo : features_live.csv — température / précipitations / vent.
+    Les jours sans ligne de features (ex. passés non régénérés) ont une météo
+    vide, jamais inventée.
+    """
+    from pathlib import Path as _P
+
+    proc = _P(__file__).resolve().parent.parent / "data" / "processed"
+
+    def _num(v):
+        if v is None:
+            return None
+        try:
+            f = float(v)
+            if f != f:  # NaN
+                return None
+            return f"{f:.1f}".replace(".", ",")
+        except Exception:
+            return None
+
+    menus_by_date: dict[str, str] = {}
+    weather_by_date: dict[str, str] = {}
+    dates: set[str] = set()
+
+    menus_file = proc / "planned_menus.csv"
+    if menus_file.exists():
+        try:
+            mdf = pd.read_csv(menus_file, dtype=str).fillna("")
+            for _, r in mdf.iterrows():
+                d = (r.get("date") or "").strip()[:10]
+                if not d:
+                    continue
+                parts = [
+                    (r.get(c) or "").strip()
+                    for c in ("entrees", "plat_principal_1", "plat_principal_2")
+                ]
+                parts = [p for p in parts if p and p != "nan"]
+                if parts:
+                    menus_by_date[d] = "; ".join(parts)
+                dates.add(d)
+        except Exception:
+            pass
+
+    feats_file = proc / "features_live.csv"
+    if feats_file.exists():
+        try:
+            fdf = pd.read_csv(feats_file)
+            for _, r in fdf.iterrows():
+                d = str(r.get("Date"))[:10]
+                if not d:
+                    continue
+                temp = _num(r.get("temperature"))
+                precip = _num(r.get("precipitation_mm"))
+                wind = _num(r.get("wind_speed_kmh"))
+                parts = []
+                if temp:
+                    parts.append(f"{temp} °C")
+                if precip:
+                    parts.append(f"{precip} mm")
+                if wind:
+                    parts.append(f"{wind} km/h")
+                weather_by_date[d] = " · ".join(parts)
+                dates.add(d)
+        except Exception:
+            pass
+
+    out = [
+        {
+            "date": d,
+            "menu": menus_by_date.get(d, ""),
+            "weather": weather_by_date.get(d, ""),
+        }
+        for d in sorted(dates)
+    ]
+    return out
+
+
 @app.post("/api/menus", response_model=MenuPlan)
 def create_menu(entry: MenuPlan):
     """Crée ou met à jour le menu planifié d'une date."""
