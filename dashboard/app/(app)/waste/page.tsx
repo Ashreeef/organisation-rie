@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { WasteChart } from '@/components/shared/waste-chart';
 import { SectionHeader } from '@/components/shared/section-header';
+import { DateRangeFilter, applyDateRange, rangeLabel } from '@/components/shared/date-range-filter';
+import type { DateRange } from '@/components/shared/date-range-filter';
 import { api } from '@/lib/api';
 import type { WasteDay, WasteSummary } from '@/lib/types';
 import { formatNumber, formatPercent, formatDate } from '@/lib/format';
@@ -15,20 +17,47 @@ import { TrendingDown, ArrowRight, ClipboardCheck, Info } from 'lucide-react';
 
 export default function WastePage() {
   const [wasteDays, setWasteDays] = React.useState<WasteDay[]>([]);
-  const [summary, setSummary] = React.useState<WasteSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [range, setRange] = React.useState<DateRange>({ preset: '30d' });
 
   React.useEffect(() => {
-    Promise.all([api.getWasteDays(), api.getWasteSummary()]).then(([w, s]) => {
+    api.getWasteDays().then((w) => {
       setWasteDays(w);
-      setSummary(s);
       setLoading(false);
     });
   }, []);
 
-  if (loading || !summary) return <Skeleton className="h-96 w-full rounded-lg" />;
+  // Période (calendrier) appliquée aux indicateurs, au graphique et au tableau.
+  const filteredDays = React.useMemo(
+    () => applyDateRange(wasteDays, range),
+    [wasteDays, range],
+  );
 
-  const hasData = summary.prepared > 0;
+  // Indicateurs recalculés côté client sur la période sélectionnée (même source
+  // de vérité que le reste de la page : les dossiers opérationnels).
+  const summary = React.useMemo<WasteSummary>(() => {
+    if (filteredDays.length === 0) {
+      return {
+        prepared: 0, served: 0, wasted: 0, wasteRate: 0,
+        trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas de bilan dans la période' },
+      };
+    }
+    const prepared = filteredDays.reduce((s, d) => s + d.prepared, 0);
+    const served = filteredDays.reduce((s, d) => s + d.served, 0);
+    const wasted = filteredDays.reduce((s, d) => s + d.wasted, 0);
+    const wasteRate = prepared > 0 ? Math.round((wasted / prepared) * 1000) / 10 : 0;
+    return {
+      prepared,
+      served,
+      wasted,
+      wasteRate,
+      trend: { direction: 'down', value: `- ${filteredDays.length} jours`, label: 'données réelles' },
+    };
+  }, [filteredDays]);
+
+  if (loading) return <Skeleton className="h-96 w-full rounded-lg" />;
+
+  const hasData = wasteDays.length > 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -73,6 +102,14 @@ export default function WastePage() {
             </Card>
           ) : (
             <>
+              {/* Filtre calendrier — agit sur les indicateurs, le graphique et le tableau */}
+              <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <DateRangeFilter range={range} onChange={setRange} />
+                <p className="text-xs text-muted-foreground">
+                  {filteredDays.length} jour(s) retenu{filteredDays.length > 1 ? 's' : ''} — {rangeLabel(range)}
+                </p>
+              </Card>
+
               {/* Summary */}
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 <Card className="p-5">
@@ -117,23 +154,23 @@ export default function WastePage() {
               </div>
 
               {/* Chart */}
-              {wasteDays.length > 0 && (
+              {filteredDays.length > 0 && (
                 <Card className="p-6">
                   <SectionHeader
                     title="Évolution du gaspillage"
-                    description={`${wasteDays.length} derniers jours`}
+                    description={`${filteredDays.length} jour(s) — ${rangeLabel(range)}`}
                   />
                   <div className="mt-4">
-                    <WasteChart data={wasteDays} />
+                    <WasteChart data={filteredDays} />
                   </div>
                 </Card>
               )}
 
               {/* Recent entries */}
-              {wasteDays.length > 0 && (
+              {filteredDays.length > 0 ? (
                 <Card className="p-6">
                   <SectionHeader
-                    title="Derniers bilans"
+                    title="Bilans de la période"
                     description="Historique récent"
                   />
                   <div className="mt-4 overflow-x-auto">
@@ -149,7 +186,7 @@ export default function WastePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {wasteDays.slice(-8).reverse().map((d) => (
+                        {filteredDays.slice(-8).reverse().map((d) => (
                           <tr
                             key={d.date}
                             className="border-b border-border/50 transition-colors hover:bg-muted/30"
@@ -168,6 +205,10 @@ export default function WastePage() {
                     </table>
                   </div>
                 </Card>
+              ) : (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Aucun bilan dans la période sélectionnée.
+                </div>
               )}
             </>
           )}
