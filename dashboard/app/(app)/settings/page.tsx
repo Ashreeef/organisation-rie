@@ -14,14 +14,25 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SectionHeader } from '@/components/shared/section-header';
-import { Building2, Bell, Globe, ShieldCheck, Save } from 'lucide-react';
+import { Building2, Bell, Globe, ShieldCheck, Save, Monitor, Moon, Sun } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 
+const THEME_ICONS = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor,
+} as const;
+
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme();
   const [siteName, setSiteName] = React.useState('Siège — Alger');
   const [language, setLanguage] = React.useState('fr');
   const [notifications, setNotifications] = React.useState(true);
   const [autoSync, setAutoSync] = React.useState(true);
+
+  const resolvedTheme = theme ?? 'system';
+  const ThemeIcon = THEME_ICONS[resolvedTheme as keyof typeof THEME_ICONS] ?? Monitor;
 
   const handleSave = () => {
     toast.success('Paramètres enregistrés');
@@ -74,6 +85,27 @@ export default function SettingsPage() {
               <SelectContent>
                 <SelectItem value="fr">Français</SelectItem>
                 <SelectItem value="en">English</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Theme */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ThemeIcon className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Thème</p>
+                <p className="text-xs text-muted-foreground">Apparence de l’interface</p>
+              </div>
+            </div>
+            <Select value={resolvedTheme} onValueChange={setTheme}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Clair</SelectItem>
+                <SelectItem value="dark">Sombre</SelectItem>
+                <SelectItem value="system">Système</SelectItem>
               </SelectContent>
             </Select>
           </div>
