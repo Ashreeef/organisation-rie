@@ -276,7 +276,7 @@ export default function WeeklyReportPage() {
             <div>
               <h1 className="text-xl font-bold text-foreground">Rapport Hebdomadaire</h1>
               <p className="text-sm text-muted-foreground">
-                Synthèse ML vs baseline naïve — {weekLabel}
+                Synthèse ML vs baseline naïve
               </p>
             </div>
           </div>
