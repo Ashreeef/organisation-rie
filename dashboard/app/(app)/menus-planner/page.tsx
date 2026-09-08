@@ -155,6 +155,11 @@ export default function MenusPlannerPage() {
   const [weekLabel, setWeekLabel] = React.useState('');
   const [savingAll, setSavingAll] = React.useState(false);
   const [lastRegen, setLastRegen] = React.useState('');
+  const [marginPct, setMarginPct] = React.useState(4);
+
+  React.useEffect(() => {
+    api.getSettings().then((s) => setMarginPct(s.safetyMarginPct)).catch(() => {});
+  }, []);
 
   const load = React.useCallback(async (week: Date) => {
     const now = new Date();
@@ -541,7 +546,7 @@ export default function MenusPlannerPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-muted-foreground">
-                À préparer (marge +6%) :
+                À préparer (marge +{marginPct}%) :
               </span>
               <span className="text-sm font-bold text-primary">
                 {formatNumber(day.forecast.recommendedMeals)} repas
