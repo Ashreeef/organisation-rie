@@ -520,6 +520,9 @@ def upcoming_holidays(days: int = 7, from_date: Optional[str] = None) -> list[Ho
         if name:
             out.append(HolidayInfo(date=d.isoformat(), name=name))
     return out
+
+
+@app.post("/api/menus", response_model=MenuPlan)
 def create_menu(entry: MenuPlan):
     """Crée ou met à jour le menu planifié d'une date."""
     return MenuPlan(**upsert_menu(entry.model_dump()))
