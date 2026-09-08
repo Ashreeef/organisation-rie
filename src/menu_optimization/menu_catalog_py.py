@@ -102,13 +102,19 @@ def get_catalog() -> dict:
 
 
 def _normalize(s) -> str:
-    """Minuscules, sans accents, espaces réduits (miroir de menu_cleaning)."""
+    """Minuscules, sans accents, espaces réduits (miroir de menu_cleaning).
+
+    Les ligatures françaises (œ → oe, æ → ae) sont décomposées explicitement :
+    la normalisation Unicode (NFD/NFKD) les laisse intactes, ce qui ferait
+    diverger « bœuf » et « boeuf » (miroir de iconv() côté TS).
+    """
     if s is None or pd.isna(s):
         return ""
     s = unicodedata.normalize("NFKD", str(s))
     s = "".join(c for c in s if not unicodedata.combining(c))
     s = re.sub(r"['’]", " ", s)
     s = s.lower()
+    s = s.replace("œ", "oe").replace("æ", "ae")
     s = re.sub(r"\s*[/&|]\s*", " + ", s)
     s = re.sub(r"\s+", " ", s)
     return s.strip()

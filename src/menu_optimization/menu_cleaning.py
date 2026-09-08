@@ -36,6 +36,7 @@ def normalize_text(s: Any) -> str:
         return ''
     s = str(s).replace('\n', ' ')
     s = strip_accents(s.lower())
+    s = s.replace('œ', 'oe').replace('æ', 'ae')   # ligatures vs orthographe ASCII
     s = re.sub(r'[\'’]', ' ', s)          # apostrophes -> space
     s = re.sub(r'\s+', ' ', s)             # collapse multiple whitespaces
     s = s.strip()

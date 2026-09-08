@@ -120,7 +120,7 @@ export const ACCOMPANIMENTS: Accompaniment[] = [
 ]
 
 function iconv(s: string): string {{
-  return s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim()
+  return s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').trim()
 }}
 
 /** Find a dish by partial name or alias match. */

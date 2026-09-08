@@ -264,7 +264,7 @@ export const DISHES: Dish[] = [
     id: "steak-hache-dinde",
     name: "Steak haché de dinde",
     category: "volaille_dinde",
-    aliases: ["Steak haché de dinde", "Steak haché de dinde gratiné", "Steak haché de dinde gratinée", "Steak hachée de dinde gratinée", "Steak haché de dinde sauce fromage", "Steak hachée de dinde gratinée + Hachi Parmantier", "Steak Haché de Dinde + Riz aux petits légumes", "Steak Haché de Dinde Gratinée", "Galette de dinde gratinée au fromage"],
+    aliases: ["Steak haché de dinde", "Steak haché de dinde gratiné", "Steak haché de dinde gratinée", "Steak hachée de dinde gratinée", "Steak haché de dinde sauce fromage", "Steak hachée de dinde gratinée + Hachi Parmantier", "Steak Haché de Dinde + Riz aux petits légumes", "Steak Haché de Dinde Gratinée"],
     keywords: ["steak", "haché", "dinde", "gratiné", "fromage"],
     typical_ratio: 0.63,
     ratio_effect: "moyen",
@@ -844,6 +844,17 @@ export const DISHES: Dish[] = [
     is_premium: false,
   },
   {
+    id: "navarin-boeuf",
+    name: "Navarin de bœuf",
+    category: "traditionnel",
+    aliases: ["Navarin", "Navarin de bœuf", "Bœuf Navarin", "Boeuf Navarin", "Navarin de boeuf"],
+    keywords: ["navarin", "bœuf", "légumes", "traditionnel"],
+    typical_ratio: 0.6,
+    ratio_effect: "moyen",
+    is_traditional: true,
+    is_premium: false,
+  },
+  {
     id: "spaghetti-bolognaise",
     name: "Spaghetti bolognaise",
     category: "pates_grains",
@@ -990,7 +1001,7 @@ export const ACCOMPANIMENTS: Accompaniment[] = [
 ]
 
 function iconv(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').trim()
 }
 
 /** Find a dish by partial name or alias match. */
@@ -1025,8 +1036,8 @@ export function getDishesByCategory(): Record<DishCategory, Dish[]> {
 }
 
 export const MENU_STATS = {
-  totalDishes: 82,
+  totalDishes: 83,
   premiumDishes: 13,
-  traditionalDishes: 30,
+  traditionalDishes: 31,
   highRatioDishes: 22,
 }
