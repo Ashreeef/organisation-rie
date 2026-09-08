@@ -827,8 +827,8 @@ export const DISHES: Dish[] = [
     category: "traditionnel",
     aliases: ["Chiche Taouk", "Chichtaouk"],
     keywords: ["chiche", "taouk", "poulet", "brochette", "libanais"],
-    typical_ratio: 0.33,
-    ratio_effect: "faible",
+    typical_ratio: 0.63,
+    ratio_effect: "moyen",
     is_traditional: true,
     is_premium: false,
   },
@@ -1000,22 +1000,45 @@ export const ACCOMPANIMENTS: Accompaniment[] = [
   }
 ]
 
+const ALLOW = new Set(["+", "a", "angroise", "au", "aufour", "aux", "avec", "barbecue", "basmati", "batata", "bordelaise", "boulangere", "chairia", "chekchouka", "coucha", "creme", "creole", "croquette", "croquettes", "curry", "dauphine", "dauphinoises", "de", "des", "du", "en", "epicee", "espagnole", "et", "financiere", "fliou", "frite", "frites", "friture", "fromage", "gratin", "grillee", "grillees", "hangroise", "haricot", "haricots", "indien", "jardiniere", "la", "le", "legumes", "les", "libanais", "mexicain", "mexicaine", "moutarde", "oriental", "paella", "paille", "pates", "petits", "pilaf", "piquante", "pomme", "pommes", "puree", "ratatouille", "risotto", "rissolee", "rissolees", "riz", "rouge", "salade", "sale", "sauce", "sautee", "spaghetti", "tagliatelles", "tartare", "vapeur", "verts", "vierge"])
+
 function iconv(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').trim()
+  return s.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/œ/g, 'oe').replace(/æ/g, 'ae')
+    .replace(/['']/g, ' ')
+    .replace(/[\u2018\u2019]/g, ' ')
+    .replace(/[+&|]/g, ' + ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-/** Find a dish by partial name or alias match. */
+function score(a: string[], t: string[]): number {
+  if (!a.length || !t.length) return 0
+  if (a.length === t.length && a.every((v, i) => v === t[i])) return 100 + a.length
+  if (a.length >= 2 && t.length > a.length && a.every((v, i) => v === t[i])) {
+    const rest = t.slice(a.length)
+    if (rest.every(tok => ALLOW.has(tok))) return a.length
+  }
+  if (t.length === 1 && a.length >= 2 && a[0] === t[0] && !ALLOW.has(t[0])) return 0.5
+  return 0
+}
+
+/** Find a dish by name or alias (strict: exact, prefix+allowance, short-search). */
 export function findDishByName(input: string): Dish | undefined {
-  const normalized = iconv(input)
-  if (!normalized) return undefined
-  return DISHES.find((d) => {
-    const dn = iconv(d.name)
-    if (dn === normalized) return true
-    return d.aliases.some((a) => {
-      const an = iconv(a)
-      return an && (an === normalized || an.includes(normalized) || normalized.includes(an))
-    })
-  })
+  const n = iconv(input)
+  if (!n) return undefined
+  const t = n.split(/\s+/).filter(Boolean)
+  let bestScore = 0, best: Dish | undefined = undefined
+  for (const d of DISHES) {
+    const cands = [iconv(d.name), ...d.aliases.map(iconv)]
+    for (const a of cands) {
+      const s = score(a.split(/\s+/).filter(Boolean), t)
+      if (s > bestScore) { bestScore = s; best = d }
+    }
+  }
+  return best
 }
 
 /** Get menu category string for the analytics page. */

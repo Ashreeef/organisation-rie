@@ -115,9 +115,44 @@ def _normalize(s) -> str:
     s = re.sub(r"['’]", " ", s)
     s = s.lower()
     s = s.replace("œ", "oe").replace("æ", "ae")
-    s = re.sub(r"\s*[/&|]\s*", " + ", s)
+    s = re.sub(r"\s*[/&|+]\s*", " + ", s)
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+
+# Tokens autorisés dans le « reste » d'une correspondance préfixe (mirror TS ALLOW)
+# Tenir synchronisé avec gen_menu_catalog_ts.py ALLOW_TOKENS.
+ALLOW_TOKENS = frozenset({
+    "+", "et", "avec", "de", "a", "la", "le", "les", "au", "aux", "du", "des", "en",
+    "riz", "pilaf", "basmati", "chairia", "libanais", "oriental", "paella", "creole", "indien", "rouge",
+    "pomme", "pommes", "puree", "vapeur", "sautee", "rissolee", "rissolees", "croquette", "croquettes",
+    "boulangere", "espagnole", "angroise", "coucha", "hangroise", "dauphine", "bordelaise", "epicee",
+    "frite", "frites", "friture", "paille",
+    "legumes", "ratatouille", "jardiniere", "haricots", "haricot", "verts", "petits",
+    "sauce", "tartare", "mexicaine", "mexicain", "curry", "moutarde", "barbecue", "fromage",
+    "piquante", "vierge", "financiere", "creme", "aufour",
+    "pates", "tagliatelles", "spaghetti", "risotto",
+    "chekchouka", "batata", "fliou", "salade", "sale", "dauphinoises", "gratin", "grillee", "grillees",
+})
+
+
+def _score(a_tokens, t_tokens):
+    """Scoring miroir TS score(): exact > prefix+allowance > short-search."""
+    if not a_tokens or not t_tokens:
+        return 0
+    if len(a_tokens) == len(t_tokens) and all(x == y for x, y in zip(a_tokens, t_tokens)):
+        return 100 + len(a_tokens)
+    if (
+        len(a_tokens) >= 2
+        and len(t_tokens) > len(a_tokens)
+        and all(a_tokens[i] == t_tokens[i] for i in range(len(a_tokens)))
+        and all(tok in ALLOW_TOKENS for tok in t_tokens[len(a_tokens) :])
+    ):
+        return len(a_tokens)
+    if len(t_tokens) == 1 and len(a_tokens) >= 2 and a_tokens[0] == t_tokens[0]:
+        if t_tokens[0] not in ALLOW_TOKENS:
+            return 0.5
+    return 0
 
 
 def _split_components(norm: str):
@@ -174,34 +209,37 @@ def _best_dish_name_for_index(catalog: dict):
 
 
 def find_dish(free_text, explicit_id: Optional[str] = None) -> Optional[dict]:
-    """Retourne le dish canonique correspondant à ``free_text`` (ou None)."""
+    """Retourne le dish canonique correspondant à ``free_text`` (ou None).
+
+    Logique stricte miroir TS findDishByName : exact > préfixe+allowance > short-search.
+    La recherche floue (rapidfuzz/difflib) est volontairement supprimée Phase 3 :
+    les textes ambigus deviennent « unmapped » et remontent en Phase 4 comme
+    candidats d'alias ou de nouveaux dishes.
+    """
     catalog = get_catalog()
-    if not free_text or pd.isna(free_text):
+    if not free_text or (isinstance(free_text, float) and pd.isna(free_text)):
         return None
-    text = str(free_text).strip()
-    norm = _normalize(text)
 
     if explicit_id:
         for d in catalog["dishes"]:
             if d["id"] == explicit_id:
                 return d
 
-    idx = _get_dish_index(catalog)
-    # Alias / nom exact (le plat_principal_1 est souvent 'plat + accompagnement')
-    if norm in idx:
-        return idx[norm][0]
+    norm = _normalize(free_text)
+    if not norm:
+        return None
 
-    # Cherche un alias ou nom inclus dans la chaîne
-    for key, dishes in idx.items():
-        if key and (key in norm or norm in key):
-            return dishes[0]
-
-    # Fuzzy sur les noms canoniques + alias
-    candidates = _best_dish_name_for_index(catalog)
-    best = _fuzzy_search(norm, candidates)
-    if best:
-        return idx[best][0]
-    return None
+    tokens = norm.split()
+    best = None
+    best_score = 0
+    for d in catalog["dishes"]:
+        cands = [_normalize(d["name"])] + [_normalize(a) for a in d["aliases"]]
+        for a in cands:
+            s = _score(a.split(), tokens)
+            if s > best_score:
+                best_score = s
+                best = d
+    return best
 
 
 def _fuzzy_search(norm: str, candidates) -> Optional[str]:
