@@ -815,8 +815,17 @@ export const api = {
     return await apiPost('/api/menus/unknown-dish', { text });
   },
 
-  async regenerateFeatures(): Promise<{ ok: boolean; message?: string }> {
-    return { ok: true, message: 'La tâche quotidienne régénérera les features. Pour un résultat immédiat, exécutez : python -m src.forecasting.daily_features --days 14' };
+  // Régénère les features live des menus planifiés de la fenêtre [start, end]
+  // côté backend, puis recharge les prévisions si demandé.
+  async regenerateFeatures(start: string, end: string): Promise<{ ok: boolean; message?: string; regenerated?: number; failed?: string[] }> {
+    try {
+      return await apiPost<{ ok: boolean; regenerated: number; failed: string[] }>(
+        '/api/menus/regenerate',
+        { start, end },
+      );
+    } catch {
+      return { ok: false, message: 'Régénération indisponible — vérifiez le backend.' };
+    }
   },
 
   /* ── Backend operations (legacy) ────────────────────────── */

@@ -48,6 +48,7 @@ from .models import (
     BilanSubmission,
     SettingsUpdate,
     HolidayInfo,
+    RegenerateFeaturesRequest,
 )
 from .forecast import (
     predict_today,
@@ -62,7 +63,7 @@ from .operations import (
     advance_status_by_time,
     derive_service_phase,
 )
-from .menus import get_menus, get_menu, upsert_menu, delete_menu, validate_menu_plan, log_unknown_dish, get_unknown_dishes
+from .menus import get_menus, get_menu, upsert_menu, delete_menu, validate_menu_plan, log_unknown_dish, get_unknown_dishes, _trigger_feature_regen
 from .settings import load_settings, save_settings
 from src.operational_calendar import iso_next_operational_day, is_operational_day
 from src.calendar_utils import holiday_name, is_public_holiday, is_ramadan
@@ -542,6 +543,29 @@ def upcoming_holidays(days: int = 7, from_date: Optional[str] = None) -> list[Ho
         if name:
             out.append(HolidayInfo(date=d.isoformat(), name=name))
     return out
+
+
+@app.post("/api/menus/regenerate", response_model=dict)
+def regenerate_menus(req: RegenerateFeaturesRequest):
+    """Régénère les features live de toutes les dates planifiées de la fenêtre
+    [start, end], pour que les prévisions reflètent immédiatement les menus en
+    cours. Ne fait jamais échouer la requête sur un échec partiel.
+
+    Retourne le nombre de dates régénérées et la liste d'éventuels échecs.
+    """
+    planned = [m["date"] for m in get_menus(start=req.start, end=req.end)]
+    ok = 0
+    failed: list[str] = []
+    for d in planned:
+        if _trigger_feature_regen(d):
+            ok += 1
+        else:
+            failed.append(d)
+    try:
+        reset_features_cache()
+    except Exception:
+        pass
+    return {"ok": True, "regenerated": ok, "failed": failed, "requested": len(planned)}
 
 
 @app.post("/api/menus", response_model=MenuPlan)

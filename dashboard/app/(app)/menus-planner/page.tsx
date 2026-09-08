@@ -331,11 +331,25 @@ export default function MenusPlannerPage() {
   };
 
   const handleRegenerate = async () => {
+    if (!weekStart) return;
     setLastRegen('');
-    const res = await api.regenerateFeatures();
+    const first = isoDate(startOfOperationalWeek(weekStart));
+    const weekDays = operationalWeekDays(weekStart, 5);
+    const last = isoDate(weekDays[weekDays.length - 1]);
+    const res = await api.regenerateFeatures(first, last);
     if (res.ok) {
-      setLastRegen(res.message ?? 'Tâche déclenchée');
-      toast.success('Features à régénérer — vérifiez la console/backend');
+      const n = res.regenerated ?? 0;
+      setLastRegen(
+        res.failed && res.failed.length > 0
+          ? `${n} date(s) régénérée(s), ${res.failed.length} en échec`
+          : n > 0
+            ? `${n} date(s) régénérée(s) avec succès`
+            : 'Aucun menu planifié sur cette semaine à régénérer',
+      );
+      toast.success(n > 0 ? 'Prévisions régénérées' : 'Aucun menu à régénérer');
+    } else {
+      setLastRegen(res.message ?? 'Échec de la régénération');
+      toast.error(res.message ?? 'Échec de la régénération');
     }
     await refreshForecast();
   };

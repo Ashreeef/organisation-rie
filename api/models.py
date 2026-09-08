@@ -146,6 +146,12 @@ class UnknownDishLog(BaseModel):
     last_seen: str = ""
 
 
+class RegenerateFeaturesRequest(BaseModel):
+    """Bornes (inclusives) de la fenêtre dont on veut régénérer les features."""
+    start: str
+    end: str
+
+
 class SettingsUpdate(BaseModel):
     site_name: Optional[str] = None
     safety_margin_pct: Optional[float] = Field(default=None, ge=0, le=25)
