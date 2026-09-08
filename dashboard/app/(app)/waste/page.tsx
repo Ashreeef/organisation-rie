@@ -13,7 +13,7 @@ import type { DateRange } from '@/components/shared/date-range-filter';
 import { api } from '@/lib/api';
 import type { WasteDay, WasteSummary } from '@/lib/types';
 import { formatNumber, formatPercent, formatDate } from '@/lib/format';
-import { TrendingDown, ArrowRight, ClipboardCheck, Info } from 'lucide-react';
+import { TrendingDown, ArrowRight, ClipboardCheck, Info, FileText } from 'lucide-react';
 
 export default function WastePage() {
   const [wasteDays, setWasteDays] = React.useState<WasteDay[]>([]);
@@ -83,6 +83,27 @@ export default function WastePage() {
             <Link href="/dashboard">
               <Button variant="outline" size="sm">
                 Accueil
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          </Card>
+
+          {/* Weekly report card */}
+          <Card className="flex items-center gap-4 p-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <FileText className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">
+                Rapport hebdomadaire
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Synthèse imprimable : prévision ML vs baseline naïve, gaspillage et précision.
+              </p>
+            </div>
+            <Link href="/waste/weekly-report">
+              <Button variant="outline" size="sm">
+                Générer le rapport
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
