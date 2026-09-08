@@ -5,6 +5,18 @@ Extrait au commit courants (88 textes distincts, 88 lignes).
 Ces textes sont des plats distincts ou des variations uniques (1×) —
 candidats de la phase catalogue, PAS des alias (garde-fou dilution).
 
+## Origine du chiffre « 66 » vs « 88 » (trace requise)
+
+Le « 66 » mentionné en conversation était une estimation à la volée
+(69 − 3 alias). Vérification ligne à ligne (git 4081ff9 → 01e9790) :
+**AUCUN effet de bord** des alias ajoutés — les 7 lignes remappées sont
+expliquées 7/7 par les 5 alias ajoutés (3 textes validés + 2 variantes
+courtes `Titli`, `Chittha djaj` qui n'avaient pas été comptées distinctes).
+126 → 133 mappés (Δ=7). Le chiffre exact actuel est 88 textes distincts,
+tous 1× (plus aucune répétition). La différence 66→88 vient de la sous-
+estimation du total initial (69 n'était qu'un bucket sur plusieurs :
+OU-combos, rest-non-ALLOW non résolus, préfixe-ok 1-mot).
+
 ## Liste
 
 - 1× `Blanc de poulet farci aux épinards + Légumes sautés à l'ail`
