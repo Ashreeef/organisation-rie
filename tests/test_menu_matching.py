@@ -245,3 +245,21 @@ def test_allow_tokens_stay_silent_isolated(input_text):
 )
 def test_farci_viande_do_not_break_prefixes(input_text, expected_id):
     assert _id(input_text) == expected_id
+
+
+# ───────── Alias fréquence≥2 validés (Phase 3 – priorisation couverture) ─────
+# Seuls les textes 2025 revenant >=2× et étant de VRAIS alias (même plat,
+# variante orthographique) ont été ajoutés, à la suite de la priorisation par
+# fréquence. Les cas 1× restants = plats distincts → phase catalogue dédiée.
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("Titli au poulet",                  "tlitli-poulet"),
+        ("Titli",                            "tlitli-poulet"),
+        ("Cuisses de poulet d\u00e9soss\u00e9e + Pomme espagnole",
+                                             "cuisse-poulet-tandoori"),
+        ("Chittha djadje",                   "chtitha-djaj"),
+    ],
+)
+def test_validated_frequency_aliases(input_text, expected_id):
+    assert _id(input_text) == expected_id
