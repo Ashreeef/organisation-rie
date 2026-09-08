@@ -73,8 +73,16 @@ features produites sont **identiques** à `features_train.csv` (validation de
 fidélité dans `tests/test_daily_features.py`).
 
 Notes de production :
-- la météo et le menu des jours futurs sont inconnus → climatologies mensuelles
-  et menu vide (flags 0, TF-IDF « empty ») ;
+- la météo de chaque date cible vient d'Open-Meteo (prévisions quotidiennes
+  réelles, sans clé API, coordonnées du siège 36.7 / 3.2) ; repli sur les
+  climatologies mensuelles en cas d'indisponibilité réseau ou au-delà de
+  l'horizon de prévision (~16 jours) ;
+- le menu vient de `data/processed/planned_menus.csv` (source de vérité unique
+  menu → features → prévision) ; une date sans menu planifié est décrite par un
+  menu vide (flags 0, TF-IDF « empty »). Chaque enregistrement d'un menu via
+  l'API/dashboard régénère immédiatement les features live de la date
+  (`api/menus.py` → `regenerate_features_for_date`) — la prévision reflète donc
+  le nouveau menu, pas un cache obsolète ;
 - les jours fériés (français, algériens et islamiques) et les fenêtres de
   Ramadan viennent de `src/calendar_utils.py`, alimenté par la bibliothèque
   `holidays` (`>= 0.99`) — aucune liste de dates manuelle ; les dates
@@ -102,6 +110,65 @@ Planificateur de tâches :
 
 La tâche (`RIE_df_daily_features`) est relancée si le PC était éteint
 (`StartWhenAvailable`) et redémarrée jusqu'à 3 fois en cas d'échec.
+
+## Dashboard & API
+
+Interface opérationnelle des 5 layers (prévision, menu, approvisionnement,
+gaspillage, planning). Backend FastAPI + frontend Next.js.
+
+```bash
+# backend (racine du dépôt) — API sur http://localhost:8000, docs sur /docs
+uvicorn api.main:app --reload --port 8000
+
+# frontend — http://localhost:3000
+cd dashboard
+npm install
+npm run dev
+```
+
+Pages : `/dashboard` (jour J — prévision, horloge du service, cycle opérationnel),
+`/forecasts`, `/menus`, `/menus-planner` (planning des menus), `/history`
+(journal + export CSV), `/waste`, `/settings`.
+
+### Paramètres d'application (`data/settings.json`, page `/settings`)
+
+| Clé | Défaut | Rôle |
+|---|---|---|
+| `site_name` | `Siège — Alger` | affiché dans la sidebar |
+| `safety_margin_pct` | `4.0` | marge de sécurité de la recommandation (0–25 %) |
+| `service_start` / `service_end` | `12:30` / `13:30` | horaires du service → horloge du dashboard |
+| `bilan_deadline` | `15:00` | heure limite de saisie du bilan (alerte si dépassée) |
+
+### Cycle de service opérationnel
+
+État d'une journée dans `data/operational/<YYYY-MM-DD>.json`
+(gitignored, fichiers JSON). Machine d'états :
+`preparation → service → bilan_a_saisir → bilan_a_confirmer → cloturee`.
+
+Le statut est **avancé automatiquement par l'horloge** (horaires de `/settings`) :
+à l'heure de début → `service`, à l'heure de fin → `bilan_a_saisir` ; jamais de
+retour en arrière, jamais au-delà de `bilan_a_saisir` (saisie et clôture du
+bilan restent des actes manuels). Un bilan n'est considéré **clos** que lorsque
+le statut vaut `cloturee` (source de vérité pour le dashboard).
+
+### Principaux endpoints
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| GET | `/api/forecast/today` | prévision du jour : repas recommandés, intervalle, marge, drapeaux Ramadan/ferié, `forecast_stale` |
+| POST | `/api/forecast` | idem avec date / `office_present` / `menu_id` forcés |
+| GET | `/api/operations/today` | état opérationnel du jour + phase horaire (`service_phase`) et horaires |
+| POST | `/api/operations/{day}/status` | avance le statut du cycle |
+| PUT | `/api/operations/{day}` | modifie l'entrée (preparés, servis, bilan…) |
+| GET | `/api/operations` | toutes les journées saisies |
+| POST/PUT/DELETE | `/api/menus` , `/api/menus/{date}` | planifier un menu → régénère les features de la date |
+| GET | `/api/context/daily` | menu + météo par jour (source des colonnes de l'export CSV historique) |
+| GET | `/api/context/holidays?days=7&from_date=…` | jours fériés à venir (cloche du header) |
+| GET/PUT | `/api/settings` | lire / mettre à jour les paramètres |
+
+La cloche du header affiche les **jours fériés à venir** dérivés de
+`src/calendar_utils.py` (bibliothèque `holidays`, aucune liste manuelle) ;
+l'état « vu » est conservé en localStorage.
 
 ## Workflow Git
 
