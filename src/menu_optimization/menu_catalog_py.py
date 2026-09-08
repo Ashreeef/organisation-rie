@@ -133,6 +133,15 @@ ALLOW_TOKENS = frozenset({
     "piquante", "vierge", "financiere", "creme", "aufour",
     "pates", "tagliatelles", "spaghetti", "risotto",
     "chekchouka", "batata", "fliou", "salade", "sale", "dauphinoises", "gratin", "grillee", "grillees",
+    # Élargissement Phase 3 — tokens révélés par la catégorisation des unmatched
+    # 2025-data (variantes d'accompagnements). Chacun vérifié EN MOT-ISOLÉ avant ajout :
+    # find_dish(token)=None (règle short-search ne les résout PAS → pas un nom de plat).
+    # farci/viande : sûrs aussi — aucun alias ne COMMENCE par ces tokens (toujours 2e+) et
+    # ils servent de rest légitime (« Escalope à la crème + Pomme farci », « Dolma à la viande »).
+    "pate", "chinoise", "cha3ria", "viande", "farci", "flou", "italienne",
+    "champignons", "pistou", "panee", "napolitaine", "julienne", "tchekhouka",
+    "chakhchouka", "bourghoul", "terre", "florentine", "maison", "provencale",
+    "turque", "rotte", "pasta", "tagliatelle", "tourte", "clafoutis", "l",
 })
 
 

@@ -206,3 +206,42 @@ def test_separators(input_text, expected_id):
 )
 def test_shortsearch_policy(input_text, expected_id):
     assert _id(input_text) == expected_id
+
+
+# ───────── Tokens ALLOW ajoutés en Phase 3 (post-catégorisation) ─────────────
+# Chacun doit rester un mot isolé → None (ShortSearch bloqué) : pas un nom de plat.
+# (testés aussi dans TestAllowSync via la parité TS↔Py)
+@pytest.mark.parametrize(
+    "input_text",
+    [
+        "pate", "chinoise", "cha3ria", "viande", "farci", "flou", "italienne",
+        "champignons", "pistou", "panee", "napolitaine", "julienne",
+        "tchekhouka", "chakhchouka", "bourghoul", "terre", "florentine",
+        "maison", "provencale", "turque", "rotte", "pasta", "tagliatelle",
+        "tourte", "clafoutis",
+    ],
+)
+def test_allow_tokens_stay_silent_isolated(input_text):
+    assert _id(input_text) is None
+
+
+# Le prefix-match des dishes dont le nom contient farci/viande ne doit PAS changer
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("poulet farci",                     "poulet-farci"),
+        ("cuisse de poulet farcie",          "cuisse-poulet-farcie"),
+        ("blanc de poulet farci",            "blanc-poulet-farci"),
+        ("lasagne viande",                   "lasagne-viande"),
+        ("moussaka viande",                  "moussaka"),
+        ("boulette de viande en sauce",      "boulette-sauce"),
+        # rest « farci » et « viande » maintenant tolérés (prefix combos réels 2025)
+        ("Escalope \u00e0 la cr\u00e8me + Pomme farci",
+                                             "escalope-creme"),
+        # NOTA : « Dolma à la viande hachée » reste None — doulma est un nom 1-mot
+        # qui ne peut pas utiliser la branche prefix+allowance (len>=2). C'est un
+        # cas d'alias à ajouter en Phase 4, PAS un échec ALLOW.
+    ],
+)
+def test_farci_viande_do_not_break_prefixes(input_text, expected_id):
+    assert _id(input_text) == expected_id
