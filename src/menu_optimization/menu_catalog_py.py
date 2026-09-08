@@ -499,6 +499,58 @@ def _build_menu_combined(df: pd.DataFrame) -> pd.Series:
             df["plat_principal_2"].fillna("")).apply(_clean_combined)
 
 
+def _enrich_text_with_aliases(text: str) -> str:
+    """Enrichit un texte de plat canonique avec ses alias du catalogue pour
+    aligner la distribution TF-IDF sur celle de l'entraînement (texte messi).
+
+    Utilisé UNIQUEMENT pour les plats sélectionnés via le dashboard (id canonique
+    explicite) : le SVD a été ajusté sur le texte historique brut (variantes
+    orthographiques, abréviations), alors que le planner fournit désormais des
+    noms canoniques propres. Concaténer quelques alias réduit ce décalage.
+    """
+    if not text or not str(text).strip():
+        return text
+    dish = find_dish(text)
+    if dish is None:
+        return text
+    alias_part = " ".join(dish.get("aliases", [])[:3])
+    if alias_part:
+        return f"{text} {alias_part}"
+    return text
+
+
+def _has_explicit_dish_id(df: pd.DataFrame, col: str) -> pd.Series:
+    """Masque : True si la ligne porte un id canonique explicite pour ``col``
+    (colonne plat_principal_X_id remplie — sélection dashboard, pas replay
+    historique)."""
+    id_col = f"{col}_id"
+    if id_col not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df[id_col].apply(
+        lambda v: v is not None and not pd.isna(v) and str(v).strip() != "" and str(v).strip().lower() != "nan"
+    )
+
+
+def _build_menu_combined_enriched(df: pd.DataFrame) -> pd.Series:
+    """_build_menu_combined avec enrichissement alias, pour le serving live.
+
+    Seules les lignes à id canonique explicite (plats sélectionnés via le
+    dashboard) sont enrichies. Les lignes historiques répliquées (replay) n'ont
+    pas d'id : elles gardent le texte brut, identique à l'entraînement — ce qui
+    préserve la reproduction exacte des features texte historique
+    (voir test_persisted_transformers_reproduce_training).
+    """
+    src = df["plat_principal_1"].fillna("")
+    enrich_1 = _has_explicit_dish_id(df, "plat_principal_1")
+    p1 = src.where(~enrich_1, src.apply(_enrich_text_with_aliases))
+
+    src2 = df["plat_principal_2"].fillna("")
+    enrich_2 = _has_explicit_dish_id(df, "plat_principal_2")
+    p2 = src2.where(~enrich_2, src2.apply(_enrich_text_with_aliases))
+
+    return (p1 + " " + p2).apply(_clean_combined)
+
+
 def _fit_target_map(df: pd.DataFrame, col: str, target: str,
                     n_folds: int = 5, smoothing: float = 20.0, seed: int = 42):
     """Encodeur cible type KFold (même logique qu'à l'entraînement).
@@ -601,7 +653,12 @@ def apply_menu_text_features(df: pd.DataFrame, fitted: dict) -> pd.DataFrame:
         return out
 
     # Transform (pas de re-fit) avec le bundle validé.
-    tfidf_mat = fitted["vectorizer"].transform(menu_combined.replace("", "empty"))
+    # Phase 6 : enrichir le texte des plats sélectionnés via le dashboard
+    # (id canonique explicite) avec leurs alias, pour rapprocher la distribution
+    # TF-IDF du texte historique sur lequel le SVD a été ajusté. Les lignes
+    # répliquées sans id restent en texte brut (reproduction exacte training).
+    menu_combined_enriched = _build_menu_combined_enriched(out)
+    tfidf_mat = fitted["vectorizer"].transform(menu_combined_enriched.replace("", "empty"))
     tfidf_comps = fitted["svd"].transform(tfidf_mat)
     for i in range(_SVD_COMPONENTS):
         out[f"tfidf_svd_{i}"] = tfidf_comps[:, i]

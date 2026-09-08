@@ -263,3 +263,55 @@ def test_farci_viande_do_not_break_prefixes(input_text, expected_id):
 )
 def test_validated_frequency_aliases(input_text, expected_id):
     assert _id(input_text) == expected_id
+
+
+# ───────── Phase 6 : enrichissement alias TF-IDF/SVD au serving ──────────────
+# Seules les lignes à id canonique explicite (plats sélectionnés via le
+# dashboard) sont enrichies avec leurs alias. Les lignes répliquées sans id et
+# les textes non mappés restent inchangés (invariant training préservé).
+from src.menu_optimization.menu_catalog_py import (
+    _build_menu_combined,
+    _build_menu_combined_enriched,
+)
+
+import pandas as pd
+
+
+class TestPhase6Enrichment:
+    def _row(self, p1, p1_id=None):
+        return pd.DataFrame({
+            "plat_principal_1": [p1],
+            "plat_principal_2": [""],
+            "plat_principal_1_id": [p1_id],
+            "plat_principal_2_id": [None],
+        })
+
+    def test_dashboard_row_with_id_is_enriched(self):
+        # « Poulet rôti » est un nom canonique du catalogue (id explicite).
+        row = self._row("Poulet rôti", "poulet-roti")
+        raw = _build_menu_combined(row).iloc[0]
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        # l'enrichissement concatène des alias → texte plus long
+        assert enriched.startswith(raw)
+        assert len(enriched.split()) > len(raw.split())
+
+    def test_replay_row_without_id_stays_identical(self):
+        # replay historique : pas d'id → texte brut inchangé (invariant training)
+        row = self._row("Poulet rôti", None)
+        raw = _build_menu_combined(row).iloc[0]
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        assert enriched == raw
+
+    def test_unmappable_text_not_enriched(self):
+        # texte non mappé au catalogue → aucun alias à injecter → inchangé
+        row = self._row("Plat totalement inconnu du catalogue", "totally-unknown")
+        raw = _build_menu_combined(row).iloc[0]
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        assert enriched == raw
+
+    def test_enrichment_uses_aliases_from_catalog(self):
+        row = self._row("Cuisse de poulet grillée", "cuisse-poulet-grille")
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        # au moins un mot d'alias répété au-delà du nom canonique seul
+        assert "grille" in enriched
+        assert "cuisse" in enriched and "poulet" in enriched

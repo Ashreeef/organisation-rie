@@ -135,3 +135,49 @@ class TestLegacyMenuTextToInference:
         assert row["menu_mapped"] == 1
         res = f.predict_today(str(target.date()))
         assert 0.30 <= res["predicted_ratio"] <= 0.88
+
+
+class TestPhase6ServeTimeEnrichment:
+    """Phase 6 : un menu sélectionné via le dashboard (id canonique explicite)
+    voit son texte enrichi de ses alias avant TF-IDF/SVD au serving — répond au
+    sanity check « un menu canonique doit produire une prévision finie et
+    bornée » (équivalent du menu Dar El Kaid)."""
+
+    def _predict_for_menu(self, isolated_workspace, tmp_path, plat_1, plat_1_id):
+        import api.forecast as f
+        f.MODELS_DIR = MODELS_DIR
+        f.DATA_DIR = tmp_path
+        f._deploy_cache = f._sub_cache = f._features_cache = None
+
+        target = _future_operational_date()
+        pm = pd.DataFrame([{
+            "date": target, "entrees": "Salade",
+            "plat_principal_1": plat_1, "plat_principal_2": "",
+            "plat_principal_1_id": plat_1_id, "plat_principal_2_id": "",
+        }])
+        pm.to_csv(tmp_path / "planned_menus.csv", index=False)
+
+        assert df.regenerate_features_for_date(target)
+        live = pd.read_csv(tmp_path / "features_live.csv", parse_dates=["Date"])
+        row = live[live["Date"].dt.normalize() == target.normalize()].iloc[0]
+        res = f.predict_today(str(target.date()))
+        return row, res
+
+    def test_canonical_dish_with_id_predicts_and_has_aliases_enriched(self, isolated_workspace, tmp_path):
+        from src.menu_optimization.menu_catalog_py import get_catalog
+        dish = get_catalog()["dishes"][0]  # « Poulet rôti » (avec alias)
+
+        row, res = self._predict_for_menu(
+            isolated_workspace, tmp_path, dish["name"], dish["id"])
+
+        # mappé + prévision finie et bornée (l'enrichissement n'a rien cassé)
+        assert row["menu_mapped"] == 1
+        assert 0.30 <= res["predicted_ratio"] <= 0.88
+
+    def test_unmapped_text_with_id_predicts_finite(self, isolated_workspace, tmp_path):
+        # texte non mappé avec id bidon → pas d'enrichissement, prévision ok
+        row, res = self._predict_for_menu(
+            isolated_workspace, tmp_path,
+            "Plat Fantome Legacy Non Reference XYZ", "totally-unknown")
+        assert row["menu_mapped"] == 0
+        assert 0.30 <= res["predicted_ratio"] <= 0.88
