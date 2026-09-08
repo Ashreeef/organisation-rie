@@ -130,12 +130,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-            BA
+            MX
           </div>
           {!collapsed && (
             <div className="min-w-0 animate-fade-in">
               <p className="truncate text-sm font-medium text-foreground">
-                BERBAOUI Ashref
+                Monsieur X
               </p>
               <p className="truncate text-[11px] text-muted-foreground">
                 Gestionnaire RIE · {siteName}
