@@ -802,6 +802,19 @@ export const api = {
     return data;
   },
 
+  // un plat principal tapé librement et non reconnu devient un
+  // candidat à examiner (backend log avec fréquence de rencontre).
+  async logUnknownDish(text: string): Promise<{
+    known: boolean;
+    dish_id?: string | null;
+    text_norm: string;
+    count: number;
+    first_seen: string;
+    last_seen: string;
+  }> {
+    return await apiPost('/api/menus/unknown-dish', { text });
+  },
+
   async regenerateFeatures(): Promise<{ ok: boolean; message?: string }> {
     return { ok: true, message: 'La tâche quotidienne régénérera les features. Pour un résultat immédiat, exécutez : python -m src.forecasting.daily_features --days 14' };
   },

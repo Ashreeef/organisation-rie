@@ -125,16 +125,19 @@ interface DayDraft {
 }
 
 // Un jour n'est planifiable que si UN plat principal (plat_principal_1) est
-// réellement renseigné — pas une valeur par défaut ou un texte vide.
-function isDayValid(day: Pick<DayDraft, 'plat_principal_1'>): boolean {
+// réellement renseigné ET résout à un id du catalogue (Phase 4 : plus de texte
+// libre pour le plat principal — le libre non reconnu devient un candidat).
+const CATALOG_DISH_IDS = new Set(DISH_OPTIONS.map((o) => o.id));
+
+function isDayValid(day: Pick<DayDraft, 'plat_principal_1' | 'plat_principal_1_id'>): boolean {
   const v = day.plat_principal_1;
-  return (
+  const hasText =
     v !== null &&
     v !== undefined &&
     v.trim() !== '' &&
     v !== 'Choisir un plat...' &&
-    v !== 'Choisir un plat…'
-  );
+    v !== 'Choisir un plat…';
+  return hasText && !!day.plat_principal_1_id && CATALOG_DISH_IDS.has(day.plat_principal_1_id);
 }
 
 const CONF_LABEL = { high: 'Élevée', medium: 'Modérée', low: 'Faible' } as const;
@@ -236,12 +239,36 @@ export default function MenusPlannerPage() {
     setDays((prev) => prev!.map((d, i) => (i === idx && !d.readOnly ? { ...d, ...patch, saved: false, validationError: false } : d)));
   };
 
+  // Phase 4 : un texte tapé dans le picker qui ne matche aucun plat du
+  // catalogue est proposé comme candidat (backend log avec fréquence).
+  const proposeUnknownDish = async (text: string) => {
+    if (!text.trim()) return;
+    try {
+      const log = await api.logUnknownDish(text.trim());
+      if (log.known && log.dish_id) {
+        toast.info(`« ${text.trim()} » correspond déjà au catalogue (${log.dish_id}).`);
+      } else {
+        toast.success(
+          `« ${text.trim()} » enregistré comme candidat (${log.count} rencontre${log.count > 1 ? 's' : ''}) à examiner.`,
+        );
+      }
+    } catch {
+      toast.error("Échec de l'enregistrement du candidat.");
+    }
+  };
+
   const saveDay = async (idx: number) => {
     const day = days![idx];
     if (day.readOnly) return;
     if (!isDayValid(day)) {
       setDays((prev) => prev!.map((d, i) => (i === idx ? { ...d, validationError: true } : d)));
-      toast.error('Le plat principal est requis pour enregistrer ce jour.');
+      const hasText = day.plat_principal_1.trim() !== '' && day.plat_principal_1 !== 'Choisir un plat...' && day.plat_principal_1 !== 'Choisir un plat…';
+      const isUnknown = hasText && (!day.plat_principal_1_id || !CATALOG_DISH_IDS.has(day.plat_principal_1_id));
+      toast.error(
+        isUnknown
+          ? `« ${day.plat_principal_1} » n'est pas dans le catalogue — choisissez un plat de la liste ou proposez-le pour examen.`
+          : 'Le plat principal est requis pour enregistrer ce jour.',
+      );
       return;
     }
     setDays((prev) => prev!.map((d, i) => (i === idx ? { ...d, loading: true } : d)));
@@ -284,7 +311,7 @@ export default function MenusPlannerPage() {
       }
       setDays((prev) => prev!.map((d) => ({ ...d, saved: isDayValid(d) && !d.readOnly, validationError: false })));
       if (skipped > 0) {
-        toast.warning(`${skipped} jour(s) sans plat principal — non enregistrés.`);
+        toast.warning(`${skipped} jour(s) sans plat valide (non reconnu ou vide) — non enregistrés.`);
       } else {
         toast.success('Tous les menus de la semaine sont enregistrés');
       }
@@ -461,10 +488,16 @@ export default function MenusPlannerPage() {
                   plat_principal_1_id: o ? o.id : undefined,
                 })
               }
+              onProposeUnknown={proposeUnknownDish}
             />
             {day.validationError && (
               <p className="text-xs font-medium text-destructive">
-                Le plat principal est requis pour enregistrer ce jour.
+                {day.plat_principal_1.trim() !== '' &&
+                day.plat_principal_1 !== 'Choisir un plat...' &&
+                day.plat_principal_1 !== 'Choisir un plat…' &&
+                (!day.plat_principal_1_id || !CATALOG_DISH_IDS.has(day.plat_principal_1_id))
+                  ? `« ${day.plat_principal_1} » n'est pas dans le catalogue — choisissez un plat de la liste ou proposez-le pour examen.`
+                  : 'Le plat principal est requis pour enregistrer ce jour.'}
               </p>
             )}
           </div>

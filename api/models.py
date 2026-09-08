@@ -137,6 +137,15 @@ class MenuPlan(BaseModel):
     plat_principal_2_id: str = ""
 
 
+class UnknownDishLog(BaseModel):
+    """Enregistrement d'un plat principal tapé librement et non résolu au
+    catalogue."""
+    text: str
+    count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
+
+
 class SettingsUpdate(BaseModel):
     site_name: Optional[str] = None
     safety_margin_pct: Optional[float] = Field(default=None, ge=0, le=25)

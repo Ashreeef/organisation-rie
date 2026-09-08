@@ -42,6 +42,7 @@ from .models import (
     HealthResponse,
     BlendScores,
     MenuPlan,
+    UnknownDishLog,
     LifecycleStatusUpdate,
     PlannedMealsUpdate,
     BilanSubmission,
@@ -61,7 +62,7 @@ from .operations import (
     advance_status_by_time,
     derive_service_phase,
 )
-from .menus import get_menus, get_menu, upsert_menu, delete_menu
+from .menus import get_menus, get_menu, upsert_menu, delete_menu, validate_menu_plan, log_unknown_dish, get_unknown_dishes
 from .settings import load_settings, save_settings
 from src.operational_calendar import iso_next_operational_day, is_operational_day
 from src.calendar_utils import holiday_name, is_public_holiday, is_ramadan
@@ -412,6 +413,27 @@ def list_menus(start: Optional[str] = None, end: Optional[str] = None):
     return [MenuPlan(**m) for m in get_menus(start=start, end=end)]
 
 
+# Déclarées AVANT /api/menus/{date} — FastAPI matche dans l'ordre de déclaration.
+@app.post("/api/menus/unknown-dish", response_model=UnknownDishLog)
+def create_unknown_dish(entry: UnknownDishLog):
+    """Enregistre un plat non reconnu au catalogue (candidat à examiner).
+
+    Si le texte résout désormais à un dish (alias ajouté depuis), retourne
+    known=True sans écrire. Sinon, incrémente la fréquence de rencontre du
+    texte normalisé (même plat saisi différemment = même entrée).
+    """
+    try:
+        return UnknownDishLog(**log_unknown_dish(entry.text))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.get("/api/menus/unknown-dish", response_model=list[UnknownDishLog])
+def list_unknown_dishes():
+    """Liste les candidats à examiner, triés par fréquence décroissante."""
+    return [UnknownDishLog(**u) for u in get_unknown_dishes()]
+
+
 @app.get("/api/menus/{date}", response_model=MenuPlan)
 def read_menu(date: str):
     """Retourne le menu planifié d'une date précise."""
@@ -524,14 +546,26 @@ def upcoming_holidays(days: int = 7, from_date: Optional[str] = None) -> list[Ho
 
 @app.post("/api/menus", response_model=MenuPlan)
 def create_menu(entry: MenuPlan):
-    """Crée ou met à jour le menu planifié d'une date."""
+    """Crée ou met à jour le menu planifié d'une date.
+
+    Phase 4 : un plat principal (plat_principal_1) non vide doit résoudre à un
+    id du catalogue — sinon 422 (le gestionnaire doit choisir dans la liste).
+    """
+    try:
+        validate_menu_plan(entry.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return MenuPlan(**upsert_menu(entry.model_dump()))
 
 
 @app.put("/api/menus/{date}", response_model=MenuPlan)
 def update_menu(date: str, entry: MenuPlan):
-    """Met à jour le menu planifié d'une date précise."""
+    """Met à jour le menu planifié d'une date précise (règle Phase 4 idem POST)."""
     entry.date = date
+    try:
+        validate_menu_plan(entry.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return MenuPlan(**upsert_menu(entry.model_dump()))
 
 
