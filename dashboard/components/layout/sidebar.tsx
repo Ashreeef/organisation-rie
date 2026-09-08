@@ -19,6 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 import { navSections } from '@/lib/navigation';
 import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Home,
@@ -39,6 +40,18 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
+  const [siteName, setSiteName] = React.useState('Siège — Alger');
+
+  React.useEffect(() => {
+    // Nom du site configuré dans /settings (persisté côté backend).
+    // Re-fetch à chaque navigation pour refléter une modification sans reload.
+    api
+      .getSettings()
+      .then((s) => setSiteName(s.siteName ?? 'Siège — Alger'))
+      .catch(() => {
+        // Backend indisponible : on conserve la valeur par défaut.
+      });
+  }, [pathname]);
 
   return (
     <aside
@@ -125,7 +138,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 BERBAOUI Ashref
               </p>
               <p className="truncate text-[11px] text-muted-foreground">
-                Gestionnaire RIE · Siège — Alger
+                Gestionnaire RIE · {siteName}
               </p>
             </div>
           )}

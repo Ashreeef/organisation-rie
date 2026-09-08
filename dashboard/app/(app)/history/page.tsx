@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SectionHeader } from '@/components/shared/section-header';
+import { DateRangeFilter, applyDateRange, rangeLabel } from '@/components/shared/date-range-filter';
+import type { DateRange } from '@/components/shared/date-range-filter';
 import { api } from '@/lib/api';
 import type { ForecastHistoryEntry } from '@/lib/types';
 import { formatDate, formatNumber } from '@/lib/format';
@@ -45,6 +47,7 @@ export default function HistoryPage() {
   const [sortDir, setSortDir] = React.useState<SortDir>('desc');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [search, setSearch] = React.useState('');
+  const [range, setRange] = React.useState<DateRange>({ preset: '30d' });
 
   React.useEffect(() => {
     // Le socle historique est déjà celui partagé avec /waste (_historyWindow) :
@@ -64,8 +67,12 @@ export default function HistoryPage() {
     }
   };
 
+  // Période (calendrier) appliquée à toutes les vues : indicateurs, graphique,
+  // tableau. Les sous-filtres (statut, recherche) n'agit que sur le tableau.
+  const inRange = React.useMemo(() => applyDateRange(history, range), [history, range]);
+
   const filtered = React.useMemo(() => {
-    let result = [...history];
+    let result = [...inRange];
     if (statusFilter !== 'all') {
       result = result.filter((e) => e.status === statusFilter);
     }
@@ -85,9 +92,9 @@ export default function HistoryPage() {
       return 0;
     });
     return result;
-  }, [history, sortKey, sortDir, statusFilter, search]);
+  }, [inRange, sortKey, sortDir, statusFilter, search]);
 
-  const completed = history.filter((e) => e.actual > 0);
+  const completed = inRange.filter((e) => e.actual > 0);
   const forecasted = completed.filter((e) => e.hasForecast);
   const avgForecast = forecasted.length > 0
     ? Math.round(forecasted.reduce((s, e) => s + e.forecast, 0) / forecasted.length)
@@ -99,18 +106,25 @@ export default function HistoryPage() {
     ? Math.round(forecasted.reduce((s, e) => s + (e.ecart != null ? Math.abs(e.ecart) / e.actual * 100 : 0), 0) / forecasted.length * 10) / 10
     : 0;
 
-  const errorChartData = history.map((e) => ({
+  const errorChartData = inRange.map((e) => ({
     shortDate: e.date.slice(5),
     error: e.errorPct,
   }));
 
   const exportCSV = () => {
-    const headers = ['Date', 'Employés prévus', 'Prévision', 'Préparés', 'Réel', 'Écart', 'Écart %', 'Statut'];
+    const headers = ['Date', 'Employés prévus', 'Recommandé', 'Préparés', 'Réel', 'Écart', 'Écart %', 'Statut', 'Menu', 'Météo'];
     const rows = filtered.map((e) => [
-      e.date, e.hasAttendance ? e.employeesCount : '', e.forecast, e.prepared, e.actual, e.ecart, e.errorPct, e.status,
+      e.date, e.hasAttendance ? e.employeesCount : '', e.forecast, e.prepared, e.actual,
+      e.ecart != null ? e.ecart : '', e.errorPct != null ? e.errorPct : '', e.status,
+      e.menu ?? '', e.weather ?? '',
     ]);
-    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // Échappement CSV (guillemets autour des cellules contenant , " ou \n).
+    const cell = (v: unknown) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = '\uFEFF' + [headers, ...rows].map((r) => r.map(cell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -133,11 +147,19 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Filtre calendrier — agit sur les indicateurs, le graphique et le tableau */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <DateRangeFilter range={range} onChange={setRange} />
+        <p className="text-xs text-muted-foreground">
+          {inRange.length} jour(s) retenu{inRange.length > 1 ? 's' : ''} — {rangeLabel(range)}
+        </p>
+      </Card>
+
       {/* Simple summary */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Prévision moyenne (30j)
+            Prévision moyenne
           </p>
           <p className="mt-2 text-3xl font-semibold text-foreground">
             {formatNumber(avgForecast)}
@@ -145,7 +167,7 @@ export default function HistoryPage() {
         </Card>
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Consommation moyenne (30j)
+            Consommation moyenne
           </p>
           <p className="mt-2 text-3xl font-semibold text-foreground">
             {formatNumber(avgActual)}
@@ -186,7 +208,7 @@ export default function HistoryPage() {
       <Card className="p-6">
         <SectionHeader
           title="Écart avec la consommation réelle"
-          description="Évolution de l'écart en pourcentage"
+          description={`Évolution de l'écart en pourcentage — ${inRange.length} jour(s)`}
         />
         <div className="mt-4">
           <ResponsiveContainer width="100%" height={240}>
@@ -228,7 +250,7 @@ export default function HistoryPage() {
       <Card className="p-6">
         <SectionHeader
           title="Historique détaillé"
-          description={`${filtered.length} entrées`}
+          description={`${filtered.length} entrée${filtered.length > 1 ? 's' : ''} — ${rangeLabel(range)}`}
           action={
             <Button variant="outline" size="sm" onClick={exportCSV}>
               <Download className="mr-2 h-4 w-4" />
@@ -266,7 +288,7 @@ export default function HistoryPage() {
                   Employés prévus <SortIcon col="employeesCount" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('forecast')}>
-                  Prévision <SortIcon col="forecast" />
+                  Recommandé <SortIcon col="forecast" />
                 </th>
                 <th className="cursor-pointer pb-3 pr-4 font-medium text-muted-foreground" onClick={() => toggleSort('prepared')}>
                   Préparés <SortIcon col="prepared" />

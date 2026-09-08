@@ -30,12 +30,6 @@ import type { ModelMetrics, ModelFamily, DataSource } from '@/lib/types';
 import { formatNumber } from '@/lib/format';
 import { GitBranch, Clock, Activity, Database, Layers, AlertTriangle } from 'lucide-react';
 
-const driftConfig = {
-  stable: { label: 'Stable', color: 'text-success', bg: 'bg-success/10' },
-  modere: { label: 'Modéré', color: 'text-warning', bg: 'bg-warning/10' },
-  eleve: { label: 'Élevé', color: 'text-destructive', bg: 'bg-destructive/10' },
-};
-
 export default function AITeamPage() {
   const [metrics, setMetrics] = React.useState<ModelMetrics | null>(null);
   const [families, setFamilies] = React.useState<ModelFamily[]>([]);
@@ -57,13 +51,13 @@ export default function AITeamPage() {
 
   if (loading || !metrics) return <Skeleton className="h-96 w-full rounded-lg" />;
 
-  const drift = driftConfig[metrics.driftIndicator];
   const accuracyData = [{ name: 'Précision', value: metrics.accuracy, fill: 'hsl(var(--primary))' }];
+  const totalModels = metrics.catboostCount + metrics.lgbCount + metrics.xgbCount;
 
   const metricCards = [
     { icon: GitBranch, label: 'Version', value: metrics.version },
     { icon: Clock, label: 'Dernier entraînement', value: metrics.lastTrainingDate },
-    { icon: Activity, label: 'Dernière prédiction', value: metrics.lastPredictionDate },
+    { icon: Activity, label: 'Nombre de modèles', value: `${totalModels} modèles` },
     { icon: Database, label: 'Fraîcheur des données', value: metrics.dataFreshness },
   ];
 
@@ -102,7 +96,7 @@ export default function AITeamPage() {
       {/* Accuracy + Error + Drift */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="p-6">
-          <SectionHeader title="Précision (30j)" />
+          <SectionHeader title="Précision estimée" description="Dérivée de l'erreur MAE hors échantillon (repas attendus)" />
           <div className="mt-4">
             <ResponsiveContainer width="100%" height={200}>
               <RadialBarChart
@@ -120,7 +114,7 @@ export default function AITeamPage() {
               <p className="text-4xl font-bold text-foreground">
                 {metrics.accuracy.toFixed(1).replace('.', ',')}%
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">Précision</p>
+              <p className="mt-1 text-xs text-muted-foreground">Précision estimée</p>
             </div>
           </div>
         </Card>
@@ -150,24 +144,25 @@ export default function AITeamPage() {
         </Card>
 
         <Card className="p-6">
-          <SectionHeader title="Santé du modèle" />
+          <SectionHeader title="Calibration & données" />
           <div className="mt-4 space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 p-4">
-              <p className="text-xs text-muted-foreground">Indicateur de drift</p>
-              <div className="mt-2">
-                <span className={`rounded px-2 py-1 text-sm font-medium ${drift.bg} ${drift.color}`}>
-                  {drift.label}
-                </span>
-              </div>
+              <p className="text-xs text-muted-foreground">Coefficient de calibration λ</p>
+              <p className="mt-1 text-2xl font-semibold text-foreground">
+                {metrics.calibrationLambda.toFixed(3)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Poids du modèle vs repli par jour de semaine
+              </p>
             </div>
             <div className="rounded-lg border border-border bg-muted/30 p-4">
-              <p className="text-xs text-muted-foreground">Disponibilité des features</p>
+              <p className="text-xs text-muted-foreground">Variables d&apos;entrée</p>
               <p className="mt-1 text-2xl font-semibold text-foreground">
-                {metrics.featureAvailability}%
+                {formatNumber(metrics.featureCount)}
               </p>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${metrics.featureAvailability}%` }} />
-              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Features utilisées par l&apos;ensemble
+              </p>
             </div>
           </div>
         </Card>
@@ -279,7 +274,7 @@ export default function AITeamPage() {
             <AccordionContent>
               <ol className="space-y-1.5 text-sm text-muted-foreground">
                 <li>1. Sous-modèle LightGBM: prédit la présence au bureau (7j)</li>
-                <li>2. Feature engineering: 126 variables (calendrier, météo, menus, lags)</li>
+                <li>2. Feature engineering: {formatNumber(metrics.featureCount)} variables (calendrier, météo, menus, lags)</li>
                 <li>3. Ensemble 3 familles (LGB + XGB + CatBoost) prédit le ratio</li>
                 <li>4. Calibration: offsets par jour + shrinkage vers la moyenne historique</li>
                 <li>5. Conversion ratio × présence → nombre de repas</li>

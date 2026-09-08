@@ -122,17 +122,37 @@ export interface ForecastHistoryEntry {
   errorPct: number | null;
   hasForecast: boolean;
   status: 'bon' | 'acceptable' | 'mauvais';
+  // Contexte "données réelles" (utilisé uniquement pour l'export CSV) :
+  // menu planifié et météo du jour, vides si indisponibles.
+  menu?: string;
+  weather?: string;
+}
+
+export interface DailyContext {
+  date: string;
+  menu: string;
+  weather: string;
+}
+
+export interface HolidayInfo {
+  date: string; // YYYY-MM-DD
+  name: string; // ex. "Eid al-Adha", "Independence Day"
+}
+
+export interface AppSettings {
+  siteName: string;
+  safetyMarginPct: number;
+  serviceStart: string;
+  serviceEnd: string;
+  bilanDeadline: string;
 }
 
 export interface ModelMetrics {
   version: string;
   lastTrainingDate: string;
-  lastPredictionDate: string;
   evaluationMetric: string;
   predictionError: string;
   dataFreshness: string;
-  driftIndicator: 'stable' | 'modere' | 'eleve';
-  featureAvailability: number;
   accuracy: number;
   mae: number;
   rmse: number;
@@ -141,6 +161,7 @@ export interface ModelMetrics {
   lgbCount: number;
   xgbCount: number;
   calibrationLambda: number;
+  featureCount: number;
 }
 
 export interface ModelFamily {
@@ -199,7 +220,16 @@ export interface TodayState {
   // Fournie par le backend (calendrier opérationnel canonique). L'UI ne fait
   // PAS de "date + 1 jour" pour la calculer.
   nextOperationalDay: string;
+  // Horloge du service (source unique : backend, depuis /settings) :
+  // "before" | "during" | "after" | "late". L'UI ne calcule jamais ces
+  // valeurs elle-même — elle les reçoit telles quelles de /api/operations/today.
+  servicePhase: ServicePhase;
+  serviceStart: string; // "HH:MM"
+  serviceEnd: string; // "HH:MM"
+  bilanDeadline: string; // "HH:MM"
 }
+
+export type ServicePhase = 'before' | 'during' | 'after' | 'late';
 
 export interface OperationalEntry {
   id: string;

@@ -14,15 +14,17 @@ import type {
   ForecastResult,
   ForecastVsActualPoint,
   WasteDay,
-  WasteSummary,
   MenuPlan,
   ForecastHistoryEntry,
+  DailyContext,
+  AppSettings,
   ModelMetrics,
   ModelFamily,
   DataSource,
   ServiceStatus,
   TodayState,
   WeekForecastDay,
+  HolidayInfo,
 } from '@/lib/types';
 import { noForecast } from '@/lib/types';
 import { DISHES } from '@/lib/menu-catalog';
@@ -62,6 +64,16 @@ async function apiGet<T>(path: string): Promise<T> {
 async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  return res.json();
+}
+
+async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -113,6 +125,11 @@ function mapStatus(s: string | undefined): ServiceStatus {
   return allowed.includes(s as ServiceStatus) ? (s as ServiceStatus) : 'preparation';
 }
 
+function mapPhase(s: string | undefined): TodayState['servicePhase'] {
+  const allowed = ['before', 'during', 'after', 'late'];
+  return allowed.includes(s as string) ? (s as TodayState['servicePhase']) : 'before';
+}
+
 let _today: TodayState | null = null;
 
 function setCachedToday(state: TodayState): TodayState {
@@ -127,6 +144,10 @@ async function fetchTodayState(): Promise<TodayState> {
       status: string;
       bilan_closed?: boolean;
       next_operational_day?: string;
+      service_phase?: string;
+      service_start?: string;
+      service_end?: string;
+      bilan_deadline?: string;
       operational: {
         status?: string;
         planned_meals?: number;
@@ -171,6 +192,11 @@ async function fetchTodayState(): Promise<TodayState> {
       // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
       bilanClosed: Boolean(res.bilan_closed),
       nextOperationalDay: res.next_operational_day || todayKey(),
+      // Horloge du service — valeurs calculées par le backend depuis /settings.
+      servicePhase: mapPhase(res.service_phase),
+      serviceStart: res.service_start ?? '12:30',
+      serviceEnd: res.service_end ?? '13:30',
+      bilanDeadline: res.bilan_deadline ?? '15:00',
     });
   } catch {
     return setCachedToday({
@@ -183,6 +209,10 @@ async function fetchTodayState(): Promise<TodayState> {
       bilan: null,
       bilanClosed: false,
       nextOperationalDay: todayKey(),
+      servicePhase: 'before',
+      serviceStart: '12:30',
+      serviceEnd: '13:30',
+      bilanDeadline: '15:00',
     });
   }
 }
@@ -370,6 +400,13 @@ export const api = {
     return _today ?? (await fetchTodayState());
   },
 
+  // Rafraîchit l'état du jour depuis le réseau (contourne le cache), pour les
+  // écrans qui poll l'horloge du service (ex. /dashboard) : getTodayState()
+  // renverrait sinon la copie figée du premier chargement.
+  async refreshTodayState(): Promise<TodayState> {
+    return fetchTodayState();
+  },
+
   async getStatus(): Promise<ServiceStatus> {
     return (await this.getTodayState()).status;
   },
@@ -534,7 +571,11 @@ export const api = {
     // journée clôturée (bilan saisi) devient une entrée. Prévision = forecast
     // persévéré à la planification; réel = servis enregistrés au bilan.
     try {
-      const entries = await this._historyWindow();
+      const [entries, context] = await Promise.all([
+        this._historyWindow(),
+        this.getDailyContext(),
+      ]);
+      const ctxByDate = new Map(context.map((c) => [c.date, c]));
 
       const rows = entries
         .map((e) => {
@@ -574,10 +615,33 @@ export const api = {
             errorPct,
             hasForecast,
             status,
+            menu: ctxByDate.get(e.date)?.menu ?? e.menuLabel ?? '',
+            weather: ctxByDate.get(e.date)?.weather ?? '',
           };
         });
 
       return delay(rows);
+    } catch {
+      return [];
+    }
+  },
+
+  // Contexte "données réelles" par jour (menu planifié + météo), uniquement
+  // utilisé par l'export CSV de /history. Les jours sans données renvoient des
+  // chaînes vides — jamais de valeurs inventées.
+  async getDailyContext(): Promise<DailyContext[]> {
+    try {
+      return await apiGet<DailyContext[]>('/api/context/daily');
+    } catch {
+      return [];
+    }
+  },
+
+  /* ── Jours fériés à venir (notification cloche du header) ── */
+
+  async getUpcomingHolidays(days = 7): Promise<HolidayInfo[]> {
+    try {
+      return await apiGet<HolidayInfo[]>(`/api/context/holidays?days=${days}`);
     } catch {
       return [];
     }
@@ -608,47 +672,23 @@ export const api = {
     }
   },
 
-  async getWasteSummary(): Promise<WasteSummary> {
-    try {
-      const days = await this._historyWindow();
-      const recent = days.filter((e) => (e.prepared ?? 0) > 0);
-      if (recent.length === 0) return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
-      const totalPrepared = recent.reduce((s, e) => s + (e.prepared ?? 0), 0);
-      const totalServed = recent.reduce((s, e) => s + (e.served ?? 0), 0);
-      const totalWasted = recent.reduce((s, e) => s + (e.waste ?? 0), 0);
-      const avgWasteRate = totalPrepared > 0 ? Math.round((totalWasted / totalPrepared) * 1000) / 10 : 0;
-      return {
-        prepared: totalPrepared,
-        served: totalServed,
-        wasted: totalWasted,
-        wasteRate: avgWasteRate,
-        trend: { direction: 'down', value: `- ${recent.length} jours`, label: 'données réelles' },
-      };
-    } catch {
-      return { prepared: 0, served: 0, wasted: 0, wasteRate: 0, trend: { direction: 'flat', value: 'Aucune donnée', label: 'pas encore de bilans saisis' } };
-    }
-  },
-
   /* ── Model metrics (AI team page only) ──────────────────── */
 
   async getModelMetrics(): Promise<ModelMetrics> {
     try {
       const data = await apiGet<{
         version: string; total_models: number; lgb_count: number; xgb_count: number;
-        catboost_count: number; calibration_lambda: number;
+        catboost_count: number; calibration_lambda: number; last_training: string;
+        data_freshness: string; feature_count: number;
         oof_metrics: { 'MAE (repas)': number; 'RMSE (repas)': number; 'Asym. Cost': number };
-        feature_count: number;
       }>('/api/model/metrics');
 
       return {
         version: `v${data.version}`,
-        lastTrainingDate: todayKey(),
-        lastPredictionDate: todayKey(),
+        lastTrainingDate: data.last_training,
         evaluationMetric: 'AsymmetricCost',
         predictionError: `${data.oof_metrics['Asym. Cost'].toFixed(1)} repas`,
-        dataFreshness: 'En ligne',
-        driftIndicator: 'stable',
-        featureAvailability: 100,
+        dataFreshness: data.data_freshness,
         accuracy: Math.round(Math.max(0, (1 - data.oof_metrics['MAE (repas)'] / 310) * 100)),
         mae: data.oof_metrics['MAE (repas)'],
         rmse: data.oof_metrics['RMSE (repas)'],
@@ -657,13 +697,14 @@ export const api = {
         lgbCount: data.lgb_count,
         xgbCount: data.xgb_count,
         calibrationLambda: data.calibration_lambda,
+        featureCount: data.feature_count,
       };
     } catch {
       return {
-        version: '—', lastTrainingDate: '—', lastPredictionDate: '—', evaluationMetric: '—',
-        predictionError: '—', dataFreshness: 'Hors ligne', driftIndicator: 'stable', featureAvailability: 0,
+        version: '—', lastTrainingDate: '—', evaluationMetric: '—',
+        predictionError: '—', dataFreshness: 'Hors ligne',
         accuracy: 0, mae: 0, rmse: 0, asymmetricCost: 0, catboostCount: 0, lgbCount: 0, xgbCount: 0,
-        calibrationLambda: 0,
+        calibrationLambda: 0, featureCount: 0,
       };
     }
   },
@@ -675,9 +716,9 @@ export const api = {
         lgb_weight: number; xgb_weight: number; catboost_weight: number;
       }>('/api/model/metrics');
       return [
-        { name: 'LightGBM', modelCount: data.lgb_count, contribution: Math.round(data.lgb_weight * 100), description: `Gradient boosting — seed × alpha variants` },
-        { name: 'XGBoost', modelCount: data.xgb_count, contribution: Math.round(data.xgb_weight * 100), description: `Regularized boosting — seed × alpha variants` },
-        { name: 'CatBoost', modelCount: data.catboost_count, contribution: Math.round(data.catboost_weight * 100), description: `Ordered boosting — dominant blend weight` },
+        { name: 'LightGBM', modelCount: data.lgb_count, contribution: Math.round(data.lgb_weight * 100), description: `Gradient boosting — variantes seed × alpha` },
+        { name: 'XGBoost', modelCount: data.xgb_count, contribution: Math.round(data.xgb_weight * 100), description: `Gradient boosting — poids de mélange dominant` },
+        { name: 'CatBoost', modelCount: data.catboost_count, contribution: Math.round(data.catboost_weight * 100), description: `Gradient boosting — variantes seed` },
       ];
     } catch {
       return [];
@@ -797,5 +838,47 @@ export const api = {
       console.error('Failed to submit operation:', err);
       return { success: false };
     }
+  },
+
+  /* ── App settings (backend-persisted) ───────────────────── */
+
+  async getSettings(): Promise<AppSettings> {
+    const raw = await apiGet<{
+      site_name: string;
+      safety_margin_pct: number;
+      service_start: string;
+      service_end: string;
+      bilan_deadline: string;
+    }>('/api/settings');
+    return {
+      siteName: raw.site_name ?? 'Siège — Alger',
+      safetyMarginPct: Number(raw.safety_margin_pct ?? 4.0),
+      serviceStart: raw.service_start ?? '12:30',
+      serviceEnd: raw.service_end ?? '13:30',
+      bilanDeadline: raw.bilan_deadline ?? '15:00',
+    };
+  },
+
+  async updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+    const body: Record<string, unknown> = {};
+    if (patch.siteName != null) body.site_name = patch.siteName;
+    if (patch.safetyMarginPct != null) body.safety_margin_pct = patch.safetyMarginPct;
+    if (patch.serviceStart != null) body.service_start = patch.serviceStart;
+    if (patch.serviceEnd != null) body.service_end = patch.serviceEnd;
+    if (patch.bilanDeadline != null) body.bilan_deadline = patch.bilanDeadline;
+    const raw = await apiPut<{
+      site_name: string;
+      safety_margin_pct: number;
+      service_start: string;
+      service_end: string;
+      bilan_deadline: string;
+    }>('/api/settings', body);
+    return {
+      siteName: raw.site_name ?? 'Siège — Alger',
+      safetyMarginPct: Number(raw.safety_margin_pct ?? 4.0),
+      serviceStart: raw.service_start ?? '12:30',
+      serviceEnd: raw.service_end ?? '13:30',
+      bilanDeadline: raw.bilan_deadline ?? '15:00',
+    };
   },
 };

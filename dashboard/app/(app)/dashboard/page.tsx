@@ -27,6 +27,7 @@ import {
   ClipboardCheck,
   RefreshCcw,
   Utensils,
+  Timer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -65,6 +66,33 @@ function menuLabel(menu: MenuPlan | null | undefined): string {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Horloge du service — helpers (affichage seulement ; le backend reste       */
+/*  la source de vérité de la phase/statut via le GET /today périodique).      */
+/* -------------------------------------------------------------------------- */
+
+// Convertit "HH:MM" en Date le même jour (minutes du ref).
+function hhmmToMinutesAhead(hhmm: string, ref: Date): number {
+  const [h, m] = (hhmm || '00:00').split(':').map(Number);
+  const target = new Date(ref);
+  target.setHours(h, m, 0, 0);
+  const diffMin = Math.round((target.getTime() - ref.getTime()) / 60000);
+  return Math.max(0, diffMin);
+}
+
+function servicePhaseLocal(now: Date, start: string, end: string, deadline: string): 'before' | 'during' | 'after' | 'late' {
+  const toMin = (hhmm: string) => {
+    const [h, m] = (hhmm || '00:00').split(':').map(Number);
+    return h * 60 + m;
+  };
+  const t = now.getHours() * 60 + now.getMinutes();
+  const [sm, em, dm] = [toMin(start), toMin(end), toMin(deadline)];
+  if (t < sm) return 'before';
+  if (t < em) return 'during';
+  if (t < dm) return 'after';
+  return 'late';
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -75,6 +103,7 @@ export default function DashboardPage() {
   const [chartData, setChartData] = React.useState<ForecastVsActualPoint[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [hasTodayPlan, setHasTodayPlan] = React.useState(false);
+  const [now, setNow] = React.useState(() => new Date());
   // Menus du jour / de la prochaine journée — même source de vérité que
   // /menus-planner (GET /api/menus/{date}) : menu → features → prévision.
   const [todayMenu, setTodayMenu] = React.useState<MenuPlan | null>(null);
@@ -85,13 +114,51 @@ export default function DashboardPage() {
   const [served, setServed] = React.useState('');
   const [comment, setComment] = React.useState('');
 
+  // Horloge locale (minute) : rafraîchit le GET /today à chaque minute pendant
+  // la fenêtre de service, afin que le backend puisse faire avancer le statut
+  // (preparation -> service à l'heure de début, service -> bilan_a_saisir à
+  // l'heure de fin). L'UI garde des comptes à rebours affichés seulement.
+  React.useEffect(() => {
+    const clock = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(clock);
+  }, []);
+
+  // Met à jour l'état du jour SANS toucher au formulaire bilan en cours de
+  // saisie : une sync périodique ne doit jamais effacer ce que tape l'utilisateur.
+  // Note : refreshTodayState() force un GET réseau — getTodayState() lirait le
+  // cache figé du premier chargement et le poll horaire ne verrait jamais les
+  // transitions de statut.
+  const refreshToday = React.useCallback(async () => {
+    const st = await api.refreshTodayState();
+    setToday(st);
+    setPrepared((prev) => {
+      if (st.status === 'bilan_a_saisir' && prev.trim() !== '') return prev;
+      return st.bilan?.prepared?.toString() ?? '';
+    });
+    setServed((prev) => {
+      if (st.status === 'bilan_a_saisir' && prev.trim() !== '') return prev;
+      return st.bilan?.served?.toString() ?? '';
+    });
+    setComment((prev) => {
+      if (st.status === 'bilan_a_saisir' && prev.trim() !== '') return prev;
+      return st.bilan?.comment ?? '';
+    });
+    return st;
+  }, []);
+
+  // Polling : une fois par minute, uniquement pendant la fenêtre opérationnelle
+  // (9h-21h). Le backend avance alors le statut persistant selon l'horloge.
+  React.useEffect(() => {
+    const h = new Date().getHours();
+    if (h < 9 || h > 21) return;
+    const id = setInterval(() => { void refreshToday(); }, 60_000);
+    return () => clearInterval(id);
+  }, [refreshToday]);
+
   const refresh = React.useCallback(async () => {
     const todayDate = new Date().toISOString().slice(0, 10);
-    const todayState = await api.getTodayState();
+    const todayState = await refreshToday();
     setToday(todayState);
-    setPrepared(todayState.bilan?.prepared?.toString() ?? '');
-    setServed(todayState.bilan?.served?.toString() ?? '');
-    setComment(todayState.bilan?.comment ?? '');
 
     // ── Prochaine journée de service ─────────────────────────────
     // Elle n'est montrée qu'UNE FOIS le bilan du jour clos. Sa date est fournie
@@ -153,7 +220,7 @@ export default function DashboardPage() {
       }
     }
     setLoading(false);
-  }, []);
+  }, [refreshToday]);
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
@@ -169,8 +236,38 @@ export default function DashboardPage() {
           <div className="flex-1">
             <p className={cn('text-sm font-semibold', statusUI[today.status].color)}>{statusUI[today.status].label}</p>
             <p className="mt-0.5 text-sm text-muted-foreground capitalize">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            {today.status === 'preparation' && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                Début du service prévu à {today.serviceStart}
+              </p>
+            )}
+            {today.status === 'service' && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Timer className="h-3.5 w-3.5" />
+                Fin du service à {today.serviceEnd}
+              </p>
+            )}
+            {today.status === 'bilan_a_saisir' && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                À clôturer avant {today.bilanDeadline}
+              </p>
+            )}
           </div>
         </div>
+
+        {today.status !== 'cloturee' && servicePhaseLocal(now, today.serviceStart, today.serviceEnd, today.bilanDeadline) === 'late' && (
+          <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+            <div>
+              <p className="text-sm font-semibold text-red-700">Bilan en retard</p>
+              <p className="mt-0.5 text-sm text-red-600/90">
+                L&apos;échéance de clôture ({today.bilanDeadline}) est dépassée.
+              </p>
+            </div>
+          </div>
+        )}
 
         <Card className="border-dashed border-amber-300 bg-amber-50/50 p-6">
           <div className="flex items-start gap-3">
@@ -241,33 +338,80 @@ export default function DashboardPage() {
 
   const handleEditBilan = async () => {
     setToday(await api.editBilanToday());
+    toast.info('Bilan rouvert — corrigez puis enregistrez à nouveau');
   };
+
+  // Horloge du service — phase locale (affichage) + comptes à rebours.
+  const phaseLocal = servicePhaseLocal(now, today.serviceStart, today.serviceEnd, today.bilanDeadline);
+  const minUntilStart = hhmmToMinutesAhead(today.serviceStart, now);
+  const minUntilEnd = hhmmToMinutesAhead(today.serviceEnd, now);
 
   return (
     <div className="space-y-6 animate-fade-in">
 
       {/* ── Status banner ──────────────────────────────────── */}
-      <div className={cn('flex items-center gap-3 rounded-lg border p-4', ui.bg, 'border-current/10')}>
+      <div className={cn('flex flex-wrap items-center gap-3 rounded-lg border p-4', ui.bg, 'border-current/10')}>
         <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', ui.bg)}>
           <Icon className={cn('h-6 w-6', ui.color)} />
         </div>
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <p className={cn('text-sm font-semibold', ui.color)}>{ui.label}</p>
           <p className="mt-0.5 text-sm text-muted-foreground capitalize">{todayLabel}</p>
+
+          {/* Horloge du service (depuis /settings) — contexte réel en direct */}
+          {status === 'preparation' && (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              Début du service prévu à {today.serviceStart}
+              {phaseLocal === 'before' && minUntilStart > 0 && ` — commence dans ${minUntilStart} min`}
+            </p>
+          )}
+          {status === 'service' && (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Timer className="h-3.5 w-3.5" />
+              Fin du service à {today.serviceEnd}
+              {phaseLocal === 'during' && minUntilEnd > 0 && ` — restent ${minUntilEnd} min`}
+            </p>
+          )}
+          {status === 'bilan_a_saisir' && (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              À clôturer avant {today.bilanDeadline}
+              {phaseLocal === 'late' && ' — échéance dépassée'}
+            </p>
+          )}
         </div>
-        {status === 'preparation' && (
-          <Button onClick={handleStartService} size="sm">
-            <PlayCircle className="mr-2 h-4 w-4" />
-            Démarrer le service
-          </Button>
-        )}
-        {status === 'service' && (
-          <Button onClick={handleEndService} size="sm" variant="outline">
-            <StopCircle className="mr-2 h-4 w-4" />
-            Terminer le service
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <span className="hidden rounded-full border border-current/20 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
+            {today.serviceStart} → {today.serviceEnd}
+          </span>
+          {status === 'preparation' && (
+            <Button onClick={handleStartService} size="sm">
+              <PlayCircle className="mr-2 h-4 w-4" />
+              Démarrer le service
+            </Button>
+          )}
+          {status === 'service' && (
+            <Button onClick={handleEndService} size="sm" variant="outline">
+              <StopCircle className="mr-2 h-4 w-4" />
+              Terminer le service
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* ── Alerte bilan en retard (échéance dépassée) ─────── */}
+      {status !== 'cloturee' && phaseLocal === 'late' && (
+        <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <div>
+            <p className="text-sm font-semibold text-red-700">Bilan en retard</p>
+            <p className="mt-0.5 text-sm text-red-600/90">
+              L&apos;échéance de clôture ({today.bilanDeadline}) est dépassée. Saisissez puis confirmez le bilan dès que possible.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Today's forecast (clean, no ML jargon) ─────────── */}
       {status !== 'cloturee' && (
@@ -410,16 +554,27 @@ export default function DashboardPage() {
               "Journée clôturée" title + date, so no duplicate here. */}
           {today.bilan && (
             <Card className="border-success/30 bg-success/5 p-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-success/10">
-                  <CheckCircle2 className="h-8 w-8 text-success" />
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-success/10">
+                    <CheckCircle2 className="h-8 w-8 text-success" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Résultat de la journée</p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">
+                      {formatNumber(today.bilan.prepared)} préparés · {formatNumber(today.bilan.served)} servis · {formatNumber(today.bilan.remaining)} restants · {formatPercent(today.bilan.wasteRate)} gaspillage
+                    </p>
+                    {today.bilan.confirmedAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Clôturé le {new Date(today.bilan.confirmedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} à {new Date(today.bilan.confirmedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Résultat de la journée</p>
-                  <p className="mt-1 text-lg font-semibold text-foreground">
-                    {formatNumber(today.bilan.prepared)} préparés · {formatNumber(today.bilan.served)} servis · {formatNumber(today.bilan.remaining)} restants · {formatPercent(today.bilan.wasteRate)} gaspillage
-                  </p>
-                </div>
+                <Button variant="outline" size="sm" onClick={handleEditBilan}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Modifier le bilan
+                </Button>
               </div>
             </Card>
           )}

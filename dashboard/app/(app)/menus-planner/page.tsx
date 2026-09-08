@@ -545,7 +545,7 @@ export default function MenusPlannerPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground">Planification des menus</h1>
-              <p className="text-sm text-muted-foreground">Dimanche → Jeudi · {weekLabel}</p>
+              <p className="text-sm text-muted-foreground">Planifiez les menus des jours de service</p>
             </div>
           </div>
           <div className="flex items-center gap-2.5">
@@ -597,7 +597,7 @@ export default function MenusPlannerPage() {
       <div className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          {weekLabel} — jours de service
+          Jours de service
         </h2>
         {days.map((day) => renderDayCard(day, days.indexOf(day)))}
       </div>

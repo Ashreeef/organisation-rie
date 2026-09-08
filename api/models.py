@@ -1,7 +1,7 @@
 """Pydantic models for the RIE API."""
 from datetime import date, datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BlendScores(BaseModel):
@@ -95,6 +95,15 @@ class OperationalResponse(BaseModel):
     # Calculée côté backend par le calendrier opérationnel canonique — l'UI ne
     # doit jamais faire de "date + 1 jour" pour la dériver.
     next_operational_day: str = ""
+    # Phase horaire du service dérivée des réglages (Horaire du service) :
+    #   "before"  avant l'heure de début  -> préparation
+    #   "during"  entre début et fin      -> service en cours
+    #   "after"   entre fin et clôture    -> bilan à saisir
+    #   "late"    après l'échéance bilan  -> bilan en retard
+    service_phase: str = "before"
+    service_start: str = "12:30"
+    service_end: str = "13:30"
+    bilan_deadline: str = "15:00"
 
 
 class ModelMetricsResponse(BaseModel):
@@ -107,6 +116,8 @@ class ModelMetricsResponse(BaseModel):
     xgb_weight: float
     catboost_weight: float
     calibration_lambda: float
+    last_training: str
+    data_freshness: str
     oof_metrics: dict
     feature_count: int
 
@@ -124,3 +135,24 @@ class MenuPlan(BaseModel):
     plat_principal_2: str = ""
     plat_principal_1_id: str = ""
     plat_principal_2_id: str = ""
+
+
+class SettingsUpdate(BaseModel):
+    site_name: Optional[str] = None
+    safety_margin_pct: Optional[float] = Field(default=None, ge=0, le=25)
+    service_start: Optional[str] = None
+    service_end: Optional[str] = None
+    bilan_deadline: Optional[str] = None
+
+
+class SettingsResponse(BaseModel):
+    site_name: str = "Siège — Alger"
+    safety_margin_pct: float = 4.0
+    service_start: str = "12:30"
+    service_end: str = "13:30"
+    bilan_deadline: str = "15:00"
+
+
+class HolidayInfo(BaseModel):
+    date: str
+    name: str

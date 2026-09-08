@@ -9,6 +9,7 @@ Cascade architecture:
 import json
 import pickle
 import logging
+from datetime import datetime
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -155,6 +156,8 @@ def get_model_info() -> dict:
         "xgb_weight": float(dep.get("best_blend_w", [0.02, 0.09, 0.89])[1]),
         "catboost_weight": float(dep.get("best_blend_w", [0.02, 0.09, 0.89])[2]) if len(dep.get("best_blend_w", [])) > 2 else 0.0,
         "calibration_lambda": float(dep.get("lam_opt", 0.726)),
+        "last_training": _file_date(MODELS_DIR / "_deployment.pkl"),
+        "data_freshness": _relative_age(DATA_DIR / "features_live.csv"),
         "oof_metrics": {
             "Asym. Cost": metrics.get("AsymCost", 18.98),
             "MAE (repas)": metrics.get("MAE", 17.13),
@@ -162,6 +165,39 @@ def get_model_info() -> dict:
         },
         "feature_count": len(dep.get("feat_cols", [])),
     }
+
+
+def _file_date(path: Path, fallback: str = "—") -> str:
+    """Date de dernière modification d'un fichier (ex. dernier entraînement)."""
+    try:
+        if not path.exists():
+            return fallback
+        ts = datetime.fromtimestamp(path.stat().st_mtime)
+        return ts.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        return fallback
+
+
+def _relative_age(path: Path, fallback: str = "—") -> str:
+    """Âge relatif d'un fichier (ex. fraîcheur des features de déploiement)."""
+    try:
+        if not path.exists():
+            return fallback
+        ts = datetime.fromtimestamp(path.stat().st_mtime)
+        now = datetime.now()
+        seconds = max(0, int((now - ts).total_seconds()))
+        if seconds < 60:
+            return "à l'instant"
+        minutes = seconds // 60
+        if minutes < 60:
+            return f"il y a {minutes} min"
+        hours = minutes // 60
+        if hours < 24:
+            return f"il y a {hours} h"
+        days = hours // 24
+        return f"il y a {days} j"
+    except Exception:
+        return fallback
 
 
 def predict_today(
@@ -232,8 +268,8 @@ def predict_today(
 
     # --- Confidence interval ---
     spread = max(10, int(round(op_pred * 0.045)))
-    safety = 0.06 if _is_ramadan(d) else 0.04
-    recommended = int(round(count_int * (1 + safety)))
+    # Marge de sécurité : % configurable dans /settings (+2 pts en Ramadan).
+    recommended = int(round(count_int * (1 + _safety_margin(d))))
 
     # --- Blend scores (for diagnostics) ---
     bw = dep.get("best_blend_w", [0.02, 0.09, 0.89])
@@ -263,6 +299,20 @@ def predict_today(
     
     logger.info(f"Final prediction: {count_int} employees ({recommended} recommended), ratio={ratio_pred:.3f}")
     return result
+
+
+def _safety_margin(d: pd.Timestamp) -> float:
+    """Marge de sécurité configurable (paramètres serveur) pour les repas à
+    préparer : ``safety_margin_pct`` (défaut 4 %, /settings). Aucun ajustement
+    automatique — les jours sans service (vendredi/samedi, et pendant le Ramadan
+    où la cantine est fermée) ne produisent pas de prévision exploitable ici.
+    """
+    try:
+        from api.settings import load_settings
+        margin = float(load_settings().get("safety_margin_pct", 4.0)) / 100.0
+    except Exception:
+        margin = 0.04
+    return margin
 
 
 def _office_from_features_row(row: pd.Series) -> Optional[float]:

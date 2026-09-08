@@ -25,7 +25,7 @@ Usage:
 import time
 import hashlib
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -45,6 +45,8 @@ from .models import (
     LifecycleStatusUpdate,
     PlannedMealsUpdate,
     BilanSubmission,
+    SettingsUpdate,
+    HolidayInfo,
 )
 from .forecast import (
     predict_today,
@@ -52,8 +54,15 @@ from .forecast import (
     reset_features_cache,
     stored_menu_fingerprint,
 )
-from .operations import get_today_entry, save_entry, get_all_entries
+from .operations import (
+    get_today_entry,
+    save_entry,
+    get_all_entries,
+    advance_status_by_time,
+    derive_service_phase,
+)
 from .menus import get_menus, get_menu, upsert_menu, delete_menu
+from .settings import load_settings, save_settings
 from src.operational_calendar import iso_next_operational_day, is_operational_day
 from src.calendar_utils import holiday_name, is_public_holiday, is_ramadan
 
@@ -217,15 +226,27 @@ def _to_forecast_model(data: dict) -> TodayForecast:
 
 @app.get("/api/operations/today", response_model=OperationalResponse)
 def operations_today():
-    """Get today's operational data + forecast."""
+    """Get today's operational data + forecast.
+
+    Le statut persistant est avancé automatiquement par l'horloge (Horaire du
+    service de /settings) : à l'heure de début -> "service", à l'heure de fin
+    -> "bilan_a_saisir". Jamais de retour en arrière, jamais au-delà de
+    "bilan_a_saisir" (saisie et clôture restent des actes manuels).
+    """
     today = date.today().isoformat()
-    forecast = _forecast_for_date(today)
+    settings = load_settings()
+    phase = derive_service_phase()
     operational = get_today_entry(today)
+    if operational is not None:
+        advanced = advance_status_by_time(operational.get("status", "preparation"))
+        if advanced != operational.get("status"):
+            operational["status"] = advanced
+            save_entry(operational)
     entry = OperationalEntry(**operational) if operational else None
     return OperationalResponse(
         date=today,
         status="active",
-        forecast=forecast,
+        forecast=_forecast_for_date(today),
         operational=entry,
         # Source unique de vérité (calendrier opérationnel canonique) :
         # le bilan est clos uniquement quand le statut vaut 'cloturee'.
@@ -233,6 +254,11 @@ def operations_today():
         # Prochaine journée de service (dimanche -> jeudi ; jamais vendredi/
         # samedi). L'UI n'a pas à recalculer ceci.
         next_operational_day=iso_next_operational_day(today),
+        # Horloge du service : phase dérivée + horaires (source = /settings).
+        service_phase=phase,
+        service_start=settings["service_start"],
+        service_end=settings["service_end"],
+        bilan_deadline=settings["bilan_deadline"],
     )
 
 
@@ -361,6 +387,22 @@ def model_metrics():
 
 
 # ---------------------------------------------------------------------------
+# Paramètres d'application (marge de sécurité, horaires)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/settings", response_model=dict)
+def get_settings() -> dict:
+    """Réglages actuels (fusionnés avec les défauts)."""
+    return load_settings()
+
+
+@app.put("/api/settings", response_model=dict)
+def put_settings(update: SettingsUpdate) -> dict:
+    """Met à jour partiellement les réglages, retourne l'état complet."""
+    return save_settings(update.model_dump(exclude_none=True))
+
+
+# ---------------------------------------------------------------------------
 # Menus planifiés
 # ---------------------------------------------------------------------------
 
@@ -377,6 +419,107 @@ def read_menu(date: str):
     if m is None:
         raise HTTPException(status_code=404, detail=f"Aucun menu pour {date}")
     return MenuPlan(**m)
+
+
+@app.get("/api/context/daily", response_model=list[dict])
+def daily_context() -> list[dict]:
+    """Menu + météo par jour (source de l'export CSV de l'historique).
+
+    Menu  : planned_menus.csv — le plat réellement planifié par le gestionnaire
+            (source de vérité : menu → features → prévision).
+    Météo : features_live.csv — température / précipitations / vent.
+    Les jours sans ligne de features (ex. passés non régénérés) ont une météo
+    vide, jamais inventée.
+    """
+    from pathlib import Path as _P
+
+    proc = _P(__file__).resolve().parent.parent / "data" / "processed"
+
+    def _num(v):
+        if v is None:
+            return None
+        try:
+            f = float(v)
+            if f != f:  # NaN
+                return None
+            return f"{f:.1f}".replace(".", ",")
+        except Exception:
+            return None
+
+    menus_by_date: dict[str, str] = {}
+    weather_by_date: dict[str, str] = {}
+    dates: set[str] = set()
+
+    menus_file = proc / "planned_menus.csv"
+    if menus_file.exists():
+        try:
+            mdf = pd.read_csv(menus_file, dtype=str).fillna("")
+            for _, r in mdf.iterrows():
+                d = (r.get("date") or "").strip()[:10]
+                if not d:
+                    continue
+                parts = [
+                    (r.get(c) or "").strip()
+                    for c in ("entrees", "plat_principal_1", "plat_principal_2")
+                ]
+                parts = [p for p in parts if p and p != "nan"]
+                if parts:
+                    menus_by_date[d] = "; ".join(parts)
+                dates.add(d)
+        except Exception:
+            pass
+
+    feats_file = proc / "features_live.csv"
+    if feats_file.exists():
+        try:
+            fdf = pd.read_csv(feats_file)
+            for _, r in fdf.iterrows():
+                d = str(r.get("Date"))[:10]
+                if not d:
+                    continue
+                temp = _num(r.get("temperature"))
+                precip = _num(r.get("precipitation_mm"))
+                wind = _num(r.get("wind_speed_kmh"))
+                parts = []
+                if temp:
+                    parts.append(f"{temp} °C")
+                if precip:
+                    parts.append(f"{precip} mm")
+                if wind:
+                    parts.append(f"{wind} km/h")
+                weather_by_date[d] = " · ".join(parts)
+                dates.add(d)
+        except Exception:
+            pass
+
+    out = [
+        {
+            "date": d,
+            "menu": menus_by_date.get(d, ""),
+            "weather": weather_by_date.get(d, ""),
+        }
+        for d in sorted(dates)
+    ]
+    return out
+
+
+@app.get("/api/context/holidays", response_model=list[HolidayInfo])
+def upcoming_holidays(days: int = 7, from_date: Optional[str] = None) -> list[HolidayInfo]:
+    """Jours fériés algériens dans les ``days`` prochains jours (aujourd'hui inclus).
+
+    Alimente la cloche de notifications du dashboard. Aucune date n'est codée
+    en dur : tout provient du calendrier unifié (src.calendar_utils, lib
+    ``holidays``). ``from_date`` = paramètre de test (excédent au jour réel).
+    """
+    days = max(1, min(int(days), 30))
+    start = date.fromisoformat(from_date) if from_date else date.today()
+    out: list[HolidayInfo] = []
+    for i in range(days):
+        d = start + timedelta(days=i)
+        name = holiday_name(d.isoformat())
+        if name:
+            out.append(HolidayInfo(date=d.isoformat(), name=name))
+    return out
 
 
 @app.post("/api/menus", response_model=MenuPlan)
