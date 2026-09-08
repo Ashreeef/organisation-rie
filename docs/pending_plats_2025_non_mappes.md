@@ -1,14 +1,60 @@
 # Plats 2025 non mappés — phase catalogue dédiée
 
 
-Extrait au commit courants (88 textes distincts, 88 lignes). 
-Ces textes sont des plats distincts ou des variations uniques (1×) —
-candidats de la phase catalogue, PAS des alias (garde-fou dilution).
+Extrait au commit courant. Initialement **88 textes distincts, 88 lignes**
+(plats distincts ou variations 1× — candidats de la phase catalogue,
+PAS des alias, garde-fou dilution).
 
-> **Jours `[OU]`** (8 combos distincts) : la question « ratio single vs
-> multi-option » est tranchée (aussi loin que mesurable) dans
-> `docs/jours_OU_mesure.md` — **aucun signal** (p=0.85, z=+0.11). Décision
-> Phase 5 en suspens à ce sujet (pas de champ dédié a priori).
+## Résolution phase catalogue (commit `…`)
+
+Sur les 88 textes :
+- **73 mappés** (83 %) par `alias` de dish (variantes ortho/pluriel réelles),
+  élargissement `ALLOW_TOKENS` (accompagnements/sauces sûrs, chacun vérifié
+  en mot-isolé `find_dish(token)=None`) ou combinaison des deux ;
+- **7 textes `[OU]`** : restent **non mappés** par principe (décision Phase 5,
+  invariant testé `test_ou_combos_unmapped`) ;
+- **8 textes hors cadres** : plats réellement distincts absents du catalogue
+  ou événements — laissés non mappés (détails ci-dessous).
+
+**Couverture mesurée sur `data_2025_.csv` (222 lignes)** : `plat_principal_1`
+mappé **62,2 % → 82,0 %** (+19,8 pts) ; `plat_principal_1` OU
+`plat_principal_2` **76,1 % → 88,7 %**.
+
+Nouveaux dishes créés (plats traditionnels distincts à part entière,
+`typical_ratio` défaut 0.60) : `kebda-mcharmela`, `tajine-lebhar`,
+`tajine-houte`. Note : `Tajine djebana` a été rattaché à l'orthographe
+canonique `tajine-jelbana` (variante dialectale existante, alias ajouté) —
+pas un nouveau dish.
+
+Nouveaux tokens `ALLOW` (16 — miroir Python↔TS, testé `TestAllowSync`) :
+`epinards, sautes, sautees, ail, ecrasee, cocktail, maklouba, farcies,
+farcie, bordelaises, patate, flanc, carotte, aubergine, roquefort, d`.
+
+Les alias ajoutés suivent la règle Phase 3 : variante orthographique/pluriel
+réellement observée du dish cible, jamais de préfixe ultra-court susceptible
+de diluer (`Cuisses de poulet` seul n'a PAS été ajouté — textes correspondants
+mappés par alias exact).
+
+### Textes conservés non mappés (15)
+
+`[OU]` (7 — décision Phase 5) :
+- 1× `Chittha djadje OU Couscous au poulet` [OU]
+- 1× `Chittha djadje OU Tajine zaligou au poulet` [OU]
+- 1× `Croquette de poisson + Tchekhouka ou Merguez en sauce + Frite` [OU]
+- 1× `Cuisses de poulet désossée + Pomme Forestier OU Tajine jben` [OU]
+- 1× `Escalope grillée + Pomme Lyonnaise OU Emincé de poulet au curry + Pâtes` [OU]
+- 1× `Merlan frit + Riz OU Kbab` [OU]
+- 1× `Sole Farci et Pâtes Coudes OU Moussaka` [OU]
+
+Hors cadre (8 — plats absents du catalogue, mapping = faux positif) :
+- 1× `Déjeuner TOP EMPLOYER` — événement entreprise
+- 1× `Emincé de dinde au curry + Tagliatelle` — émincé de dinde absent (1×)
+- 1× `Cuisses de poulet à la napolitaine + pate à l'italienne` — variante ambiguë (1×)
+- 1× `Boulette de poisson + Riz` — poisson en boulette absent (1×)
+- 1× `Jambon de poulet farci gratiné + julienne de légumes et pate` — jambon de poulet absent (1×)
+- 1× `Poulet à la marocaine + pomme coucha` — « poulet marocain » ≠ mexicaine/tajine marocain
+- 1× `Steak haché en sauce + Pomme boulangere` — steak haché ≠ navarin de bœuf
+- 1× `Steak hachée poulet gratinée + Pomme sautée` — steak haché POULET ≠ dindes
 
 ## Origine du chiffre « 66 » vs « 88 » (trace requise)
 
@@ -22,93 +68,8 @@ tous 1× (plus aucune répétition). La différence 66→88 vient de la sous-
 estimation du total initial (69 n'était qu'un bucket sur plusieurs :
 OU-combos, rest-non-ALLOW non résolus, préfixe-ok 1-mot).
 
-## Liste
-
-- 1× `Blanc de poulet farci aux épinards + Légumes sautés à l'ail`
-- 1× `Blanc de poulet gratiné + pomme bordelaise`
-- 1× `Blanquette de poulet + pomme écrasée`
-- 1× `Boulette de poisson + Riz`
-- 1× `Brochette de kefta + pomme purée`
-- 1× `Brochette grillée + bourghoul à la turque`
-- 1× `Brochette grillée sauce piquante + Pomme coucha`
-- 1× `Calamar en sauce + Blanc de poulet farci`
-- 1× `Calamar en sauce + Brochette panée`
-- 1× `Chawarma + Spaghetti chinoise`
-- 1× `Chiche kebab sauce piquante Pomme rissolée`
-- 1× `Chittha Djadj`
-- 1× `Chittha djadje OU Couscous au poulet` [OU]
-- 1× `Chittha djadje OU Tajine zaligou au poulet` [OU]
-- 1× `Cordon Bleu sauce cocktail + Ratatouille`
-- 1× `Croquette de poisson + Tchekhouka ou Merguez en sauce + Frite` [OU]
-- 1× `Cuisses de poulet + épinards et pomme farcie`
-- 1× `Cuisses de poulet désossée + Pomme Forestier OU Tajine jben` [OU]
-- 1× `Cuisses de poulet désossée + Ratatouille`
-- 1× `Cuisses de poulet désossée + Riz`
-- 1× `Cuisses de poulet désossée + gratin de légumes`
-- 1× `Cuisses de poulet désossée + pomme coucha`
-- 1× `Cuisses de poulet désossée + épinards et pommes au curry`
-- 1× `Cuisses de poulet désossée tandoor + Fenouille à la crème + pomme de chee`
-- 1× `Cuisses de poulet farci + Tagliatelle en sauce`
-- 1× `Cuisses de poulet à la napolitaine + pate à l'italienne`
-- 1× `Cuisses désossée + Spaghetti à la chinoise`
-- 1× `Cuisses désossée + riz cha3ria`
-- 1× `Dolma viande`
-- 1× `Dolma à la viande hachée`
-- 1× `Déjeuner TOP EMPLOYER`
-- 1× `Emincé de dinde au curry + Tagliatelle`
-- 1× `Emincé de poulet au curry + gratin d'aubergine`
-- 1× `Emincé de poulet sauce au curry + Pate sauce pistou`
-- 1× `Emincé de poulet à la mexicaine`
-- 1× `Emincé de poulet à la mexicaine + frites`
-- 1× `Emincé à la mexicaine + Pomme coucha`
-- 1× `Escalope de poulet pané avec sauce mexicaine + Pomme sautées`
-- 1× `Escalope grillée + Pomme Lyonnaise OU Emincé de poulet au curry + Pâtes` [OU]
-- 1× `Escalope grillée + patate flou`
-- 1× `Escalope panée + Pommes bordelaises`
-- 1× `Escalope à la dersa + riz maklouba`
-- 1× `Escalope à la sauce moutarde + Pomme Farciés`
-- 1× `Filet de sol pané + riz`
-- 1× `Galantine de poulet farcie + purée de carotte et pomme rissolée`
-- 1× `Hamburger + frites`
-- 1× `Humburger + Frite`
-- 1× `Jambon de poulet farci gratiné + julienne de légumes et pate`
-- 1× `Kbab à la turque + bourghoul`
-- 1× `Kebda Mchermela + Frite`
-- 1× `Kebda mcharmela`
-- 1× `Kebda mcharmela + frites`
-- 1× `Kefta aux olives`
-- 1× `Kefta grillée`
-- 1× `Merlan frit + Riz OU Kbab` [OU]
-- 1× `Merlan pané + riz aux petits légumes`
-- 1× `Merlan à la dersa + Riz maklouba`
-- 1× `Merlan à la napolitaine + riz paella`
-- 1× `Merlon en sauce + Croquettes des légumes + Fenouille`
-- 1× `Mermouse + Spaghetti à la napolitaine`
-- 1× `Mermousse + riz à la mexicaine`
-- 1× `Moussaka à la viande hachée`
-- 1× `Pauptette de dinde au fromage + croquette de légumes`
-- 1× `Pauptette de dinde farcie + tagliatelle sauce roquefort`
-- 1× `Pilon de poulet + Riz mexicain`
-- 1× `Poisson au fours + riz pilaf`
-- 1× `Poisson pané avec sauce tartare + riz`
-- 1× `Poisson pané sauce cocktail + Pate sauce pistou`
-- 1× `Poulet roti + Haricot verts sauté et risotto`
-- 1× `Poulet roti + pomme de terre en sauce gratinée`
-- 1× `Poulet à la marocaine + pomme coucha`
-- 1× `Roulé de dinde sauce aux olives et champignons`
-- 1× `Sandwichs`
-- 1× `Sardine friture + frites`
-- 1× `Sol farci + jardinière de légumes`
-- 1× `Sole Farci et Pâtes Coudes OU Moussaka` [OU]
-- 1× `Sole au four sauce napolitaine + pomme boulangère`
-- 1× `Sole panée + Riz maklouba`
-- 1× `Steak de bœuf en sauce + pomme boulangère`
-- 1× `Steak haché en sauce + Pomme boulangere`
-- 1× `Steak haché pané + flanc de légumes`
-- 1× `Steak hachée de dinde + pomme purée`
-- 1× `Steak hachée poulet gratinée + Pomme sautée`
-- 1× `Tajine djebana`
-- 1× `Tajine l'houte`
-- 1× `Tajine lebhar`
-- 1× `Vol au vent au poulet`
-- 1× `Vol au vent sauce à la viande`
+> **Jours `[OU]`** (8 combos distincts) : la question « ratio single vs
+> multi-option » est tranchée (aussi loin que mesurable) dans
+> `docs/jours_OU_mesure.md` — **aucune évidence trouvée, échantillon trop
+> petit pour trancher** (p=0.85, z=+0.11, n=8). Décision Phase 5 en suspens
+> à ce sujet (pas de champ dédié a priori).

@@ -142,6 +142,13 @@ ALLOW_TOKENS = frozenset({
     "champignons", "pistou", "panee", "napolitaine", "julienne", "tchekhouka",
     "chakhchouka", "bourghoul", "terre", "florentine", "maison", "provencale",
     "turque", "rotte", "pasta", "tagliatelle", "tourte", "clafoutis", "l",
+    # Élargissement Phase catalogue — accompagnements/sauces révélés par la
+    # curation des 88 unmatched 2025. Chacun vérifié EN MOT-ISOLÉ avant ajout :
+    # find_dish(token)=None. farcie/farcies : aucun alias ne COMMENCE par ces
+    # tokens (cf. « Sole farcie », « Poulet farci »). d : apostrophe « d'aubergine ».
+    "epinards", "sautes", "sautees", "ail", "ecrasee", "cocktail", "maklouba",
+    "farcies", "farcie", "bordelaises", "patate", "flanc", "carotte",
+    "aubergine", "roquefort", "d",
 })
 
 

@@ -37,6 +37,11 @@ ALLOW_TOKENS = {
     "champignons", "pistou", "panee", "napolitaine", "julienne", "tchekhouka",
     "chakhchouka", "bourghoul", "terre", "florentine", "maison", "provencale",
     "turque", "rotte", "pasta", "tagliatelle", "tourte", "clafoutis", "l",
+    # Élargissement Phase catalogue — miroir de menu_catalog_py.py ALLOW_TOKENS.
+    # Chacun vérifié EN MOT-ISOLÉ (find_dish(token)=None) avant l'ajout.
+    "epinards", "sautes", "sautees", "ail", "ecrasee", "cocktail", "maklouba",
+    "farcies", "farcie", "bordelaises", "patate", "flanc", "carotte",
+    "aubergine", "roquefort", "d",
 }
 ALLOW_JSON = json.dumps(sorted(ALLOW_TOKENS), ensure_ascii=False)
 
