@@ -5,6 +5,11 @@ Extrait au commit courants (88 textes distincts, 88 lignes).
 Ces textes sont des plats distincts ou des variations uniques (1×) —
 candidats de la phase catalogue, PAS des alias (garde-fou dilution).
 
+> **Jours `[OU]`** (8 combos distincts) : la question « ratio single vs
+> multi-option » est tranchée (aussi loin que mesurable) dans
+> `docs/jours_OU_mesure.md` — **aucun signal** (p=0.85, z=+0.11). Décision
+> Phase 5 en suspens à ce sujet (pas de champ dédié a priori).
+
 ## Origine du chiffre « 66 » vs « 88 » (trace requise)
 
 Le « 66 » mentionné en conversation était une estimation à la volée

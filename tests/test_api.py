@@ -247,15 +247,40 @@ class TestIntegrationRealData:
     )
     def test_daily_context_merges_menu_and_weather(self):
         # Export CSV de /history : menu réellement planifié + météo live.
+        # Attendu : les dates du planned_menus réel ont leur menu, celles de
+        # features_live leur météo (jamais inventée). Pas de date hardcodée —
+        # le fichier planned_menus.csv est local/gitignoré.
+        import csv
+
         import api.main as main
 
         rows = main.daily_context()
         by_date = {r["date"]: r for r in rows}
-        assert "2026-09-07" in by_date
-        # Menu du 07/09 planifié dans planned_menus.csv (source de vérité).
-        assert "Tagliatelles" in by_date["2026-09-07"]["menu"]
-        # Météo du 07/09 présente dans features_live.csv.
-        assert "°C" in by_date["2026-09-07"]["weather"]
+
+        # 1) Chaque menu planifié apparaît dans l'export, menu non vide.
+        with open(ROOT / "data" / "processed" / "planned_menus.csv",
+                  encoding="utf-8") as f:
+            planned = list(csv.DictReader(f))
+        planned_dates = {r["date"][:10] for r in planned if (r.get("date") or "")[:10]}
+        assert planned_dates <= set(by_date), "un menu planifié absent de l'export"
+        for r in planned:
+            d = (r.get("date") or "")[:10]
+            if not d:
+                continue
+            parts = [
+                (r.get(c) or "").strip()
+                for c in ("entrees", "plat_principal_1", "plat_principal_2")
+            ]
+            parts = [p for p in parts if p and p != "nan"]
+            assert parts, f"menu planifié {d} vide dans la source"
+            assert by_date[d]["menu"] == "; ".join(parts), f"menu {d} non fusionné"
+
+        # 2) Météo : les dates de features_live ont une température affichée.
+        live = pd.read_csv(ROOT / "data" / "processed" / "features_live.csv")
+        live_dates = {str(d)[:10] for d in live["Date"]}
+        with_weather = [d for d in live_dates if by_date.get(d, {}).get("weather")]
+        assert with_weather, "aucune météo affichée alors que features_live existe"
+        assert all("°C" in by_date[d]["weather"] for d in with_weather)
         # Une date sans ligne de features renvoie une météo vide, jamais inventée.
         assert any(r["weather"] == "" for r in rows)
 
