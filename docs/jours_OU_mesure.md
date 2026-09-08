@@ -28,26 +28,32 @@ jour « OU » ; l'historique qui contient des jours « OU » n'a pas
 Sur 2025 (8 jours OU vs 214 single), normalisé contre les jours non-OU du même
 jour de semaine :
 
-- `z` moyen : **+0.11** (près de 0 — aucune tendance)
+- `z` moyen : **+0.11** (unités d'écart-type par rapport aux peers même dow)
 - % vs jours peers même dow : **+0.6 %**
-- Médiane single 310 vs médiane OU 318 (écart ~2 %, bruit)
-- Mann-Whitney unilatéral : **p = 0.85** — aucun signal.
+- Médiane single 310 vs médiane OU 318 (écart ~2 %)
+- Mann-Whitney : **p = 0.85** — n'approche aucun seuil de significativité.
+
+**Attention au sens de ce chiffre** : avec **n=8** jours OU seulement, la
+puissance statistique est très faible. « p=0.85 » ne prouve pas l'absence
+d'effet — il dit qu'**aucune évidence d'écart n'est détectable** sur un
+échantillon aussi petit. Formulation correcte : *« aucune évidence trouvée,
+échantillon trop petit pour trancher »*, pas *« pas d'effet »*.
 
 Les 8 jours OU sont répartis à travers la semaine (2×lun, 2×mar, 2×mer, 1×jeu,
 1×dim), donc pas d'artefact de structure calendaire.
 
 ## Conclusion & recommandation Phase 5
 
-- **Pas de justification chiffrée pour un traitement spécial du ratio.** Les
-  jours « OU » ne semblent pas être des jours « plus d'affluence » — c'est une
-  écriture de choix de plat, pas un volume double. Leur ratio va se comporter
-  comme celui du dow/dish dominant.
+- **Aucune évidence chiffrée d'un traitement spécial du ratio.** À la lecture
+  des données disponibles, rien n'indique que les jours « OU » soient des jours
+  « plus d'affluence ». Mais l'échantillon est trop petit pour conclure
+  (voir réserve ci-dessous).
 - Recommandation pragmatique Phase 5 : **ne pas créer de schéma/champ dédié**
   pour l'instant. Deux options d'implémentation premier prix (à ton choix) :
   1. **Mapper le OU comme choix du premier plat listé** (le plus fréquent
      historiquement pour ce combo) — les 8 jours entrent dans le matching,
-     avec la réserve qu'on perd l'info "alternatif" (qui n'influence pas le
-     ratio selon les données).
+     avec la réserve qu'on perd l'info "alternatif" (aucun impact mesuré, mais
+     échantillon trop faible pour trancher).
   2. **Conserver le tag `[OU]` comme entrée « à 1× »** dans la phase catalogue,
      sans schéma : les 8 occurrences restent dans `pending_plats...` et le
      planner continue de n'offrir qu'un plat par jour (le manager choisit
@@ -58,7 +64,12 @@ Les 8 jours OU sont répartis à travers la semaine (2×lun, 2×mar, 2×mer, 1×
   c'est un jour à double service (ratio inchangé), représentable par un second
   plat ; si un seul : c'est un choix de l'équipe, le planner doit lever
   l'ambiguïté côté saisie (un picker depuis lequel on tranche), pas côté ratio.
-- **Réserve** : n=8 est faible et 2025 n'a pas d'office. Si la Phase 5 veut
-  véritablement trancher "champ dédié ou non", il faudrait soit recuperer
-  `office_present` sur ces 8 dates, soit accepter le proxy cantine comme
-  suffisant (c'est la position de ce document, vu la cohérence dow).
+- **Réserve statistique (à lire avant toute citation de ce doc)** : n=8 jours
+  OU sur 2025, et 2025 n'a pas d'office_present. Les chiffres ci-dessus ne
+  **prouvent** pas l'absence d'effet — ils montrent qu'**aucune évidence
+  d'écart n'est détectable**. Un lecteur futur doit lire ce document comme
+  *« au mieux aucun signal, au pire impossible à mesurer sur l'existant »*,
+  pas comme une conclusion statistique ferme. Si la question devait être
+  re-posée (ex. reprise du double-service dans le planner), le chemin propre
+  est de récupérer `office_present` sur ces 8 dates, ou d'accepter le proxy
+  cantine comme suffisant.
