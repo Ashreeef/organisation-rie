@@ -46,3 +46,8 @@ mlruns/
 
 # Backup
 backups/
+
+# Electron (desktop app)
+electron/node_modules/
+electron/dist/
+electron/out/

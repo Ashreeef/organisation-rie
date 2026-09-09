@@ -1,0 +1,64 @@
+{
+  "name": "rie-electron",
+  "version": "1.0.0",
+  "description": "RIE Intelligence — BNP Paribas El Djazaïr (Electron desktop wrapper)",
+  "main": "main.js",
+  "author": "RIE Data / IA Team",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^27.1.3",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "dz.bnp.rie.intelligence",
+    "productName": "RIE Intelligence",
+    "compression": "store",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dashboard/.next/standalone",
+        "to": "dashboard",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RIE Intelligence"
+    }
+  },
+  "allowScripts": {
+    "electron@27.3.11": true
+  }
+}

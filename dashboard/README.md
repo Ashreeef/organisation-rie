@@ -29,7 +29,7 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:3000. The dashboard proxies API calls to the backend (see `next.config` and `lib/api.ts`).
+Then open http://127.0.0.1:3000. The dashboard calls the backend at http://127.0.0.1:8000 (`lib/api.ts`, overridable via `NEXT_PUBLIC_API_URL`).
 
 ## Scripts
 
