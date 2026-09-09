@@ -103,6 +103,18 @@ def health():
     )
 
 
+@app.get("/health", response_model=HealthResponse)
+def health_probe():
+    """Liveness probe used by the Electron launcher - always public."""
+    info = get_model_info()
+    uptime = f"{int(time.time() - _start_time)}s"
+    return HealthResponse(
+        status="ok",
+        models_loaded=info["total_models"],
+        uptime=uptime,
+    )
+
+
 @app.get("/api/forecast/today", response_model=TodayForecast)
 def forecast_today():
     """Get today's prediction from the trained cascade model."""
