@@ -137,67 +137,88 @@ function setCachedToday(state: TodayState): TodayState {
   return state;
 }
 
+// Forme brute de la réponse /api/operations/today (et de l'override de
+// présence, qui renvoie le même OperationalResponse).
+interface OperationalResponseRaw {
+  date: string;
+  status: string;
+  bilan_closed?: boolean;
+  next_operational_day?: string;
+  service_phase?: string;
+  service_start?: string;
+  service_end?: string;
+  bilan_deadline?: string;
+  operational: {
+    status?: string;
+    planned_meals?: number;
+    actual_meals?: number;
+    prepared?: number;
+    served?: number;
+    presence_overridden?: boolean;
+    comment?: string | null;
+    bilan?: {
+      date?: string;
+      prepared?: number;
+      served?: number;
+      remaining?: number;
+      wasteRate?: number;
+      comment?: string | null;
+      menu?: { categoryId: string; dishId: string }[];
+      confirmedAt?: string;
+    } | null;
+  } | null;
+  forecast?: {
+    date: string; forecast_available?: boolean; unavailable_reason?: string | null;
+    office_present: number; predicted_ratio: number;
+    employees_count: number; recommended_meals: number;
+    confidence_lower: number; confidence_upper: number;
+    confidence_level: string; recommendation_note: string;
+    forecast_stale?: boolean; menu_fingerprint?: string;
+    blend_scores: { lgb: number; xgb: number; catboost: number };
+    is_ramadan?: boolean; is_holiday?: boolean; holiday_name?: string | null;
+    menu_planned?: boolean;
+  } | null;
+}
+
+function mapTodayFromOperational(res: OperationalResponseRaw): TodayState {
+  const op = res.operational ?? {};
+  const bilan = op.bilan
+    ? {
+        date: op.bilan.date ?? res.date,
+        prepared: op.bilan.prepared ?? 0,
+        served: op.bilan.served ?? 0,
+        remaining: op.bilan.remaining ?? 0,
+        wasteRate: op.bilan.wasteRate ?? 0,
+        comment: op.bilan.comment ?? undefined,
+        menu: op.bilan.menu ?? [],
+        confirmedAt: op.bilan.confirmedAt,
+      }
+    : null;
+  return {
+    date: res.date,
+    status: mapStatus(op.status ?? res.status),
+    forecast: null,
+    plannedMeals: op.planned_meals ?? 0,
+    actualMealsServed: op.actual_meals ?? 0,
+    overrideReason: null,
+    presenceOverridden: Boolean(op.presence_overridden),
+    bilan,
+    // Fourni par le backend (source unique) : bilan clos + prochaine journée
+    // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
+    bilanClosed: Boolean(res.bilan_closed),
+    nextOperationalDay: res.next_operational_day || todayKey(),
+    // Horloge du service — valeurs calculées par le backend depuis /settings.
+    servicePhase: mapPhase(res.service_phase),
+    serviceStart: res.service_start ?? '12:30',
+    serviceEnd: res.service_end ?? '13:30',
+    bilanDeadline: res.bilan_deadline ?? '15:00',
+  };
+}
+
 async function fetchTodayState(): Promise<TodayState> {
   try {
-    const res = await apiGet<{
-      date: string;
-      status: string;
-      bilan_closed?: boolean;
-      next_operational_day?: string;
-      service_phase?: string;
-      service_start?: string;
-      service_end?: string;
-      bilan_deadline?: string;
-      operational: {
-        status?: string;
-        planned_meals?: number;
-        actual_meals?: number;
-        prepared?: number;
-        served?: number;
-        comment?: string | null;
-        bilan?: {
-          date?: string;
-          prepared?: number;
-          served?: number;
-          remaining?: number;
-          wasteRate?: number;
-          comment?: string | null;
-          menu?: { categoryId: string; dishId: string }[];
-          confirmedAt?: string;
-        } | null;
-      } | null;
-    }>('/api/operations/today');
-    const op = res.operational ?? {};
-    const bilan = op.bilan
-      ? {
-          date: op.bilan.date ?? res.date,
-          prepared: op.bilan.prepared ?? 0,
-          served: op.bilan.served ?? 0,
-          remaining: op.bilan.remaining ?? 0,
-          wasteRate: op.bilan.wasteRate ?? 0,
-          comment: op.bilan.comment ?? undefined,
-          menu: op.bilan.menu ?? [],
-          confirmedAt: op.bilan.confirmedAt,
-        }
-      : null;
-    return setCachedToday({
-      date: res.date,
-      status: mapStatus(op.status ?? res.status),
-      forecast: null,
-      plannedMeals: op.planned_meals ?? 0,
-      actualMealsServed: op.actual_meals ?? 0,
-      overrideReason: null,
-      bilan,
-      // Fourni par le backend (source unique) : bilan clos + prochaine journée
-      // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
-      bilanClosed: Boolean(res.bilan_closed),
-      nextOperationalDay: res.next_operational_day || todayKey(),
-      // Horloge du service — valeurs calculées par le backend depuis /settings.
-      servicePhase: mapPhase(res.service_phase),
-      serviceStart: res.service_start ?? '12:30',
-      serviceEnd: res.service_end ?? '13:30',
-      bilanDeadline: res.bilan_deadline ?? '15:00',
-    });
+    const res = await apiGet<OperationalResponseRaw>('/api/operations/today');
+    return setCachedToday(mapTodayFromOperational(res));
   } catch {
     return setCachedToday({
       date: todayKey(),
@@ -206,6 +227,7 @@ async function fetchTodayState(): Promise<TodayState> {
       plannedMeals: 0,
       actualMealsServed: 0,
       overrideReason: null,
+      presenceOverridden: false,
       bilan: null,
       bilanClosed: false,
       nextOperationalDay: todayKey(),
@@ -456,6 +478,27 @@ export const api = {
   async setActualMealsServed(count: number): Promise<TodayState> {
     await apiPost(`/api/operations/${todayKey()}/planned`, { planned_meals: count });
     return fetchTodayState();
+  },
+
+  // Confirme/corrige la présence bureau du jour : l'override est persisté côté
+  // backend et la prévision est immédiatement recalculée avec cette valeur.
+  // `presence=null` retire l'override et revient à la prédiction du modèle.
+  async setOfficePresence(presence: number | null): Promise<{ state: TodayState; forecast: ForecastResult }> {
+    try {
+      const res = await apiPost<OperationalResponseRaw>(
+        '/api/operations/today/presence-override',
+        { presence: presence ?? 0, override: presence !== null },
+      );
+      return {
+        state: mapTodayFromOperational(res),
+        forecast: res.forecast ? mapBackendForecast(res.forecast) : fallbackForecast(todayKey()),
+      };
+    } catch {
+      return {
+        state: await fetchTodayState(),
+        forecast: fallbackForecast(todayKey()),
+      };
+    }
   },
 
   /* ── Tomorrow preparation (backend + forecast) ──────────── */

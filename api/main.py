@@ -45,6 +45,7 @@ from .models import (
     UnknownDishLog,
     LifecycleStatusUpdate,
     PlannedMealsUpdate,
+    PresenceOverrideRequest,
     BilanSubmission,
     SettingsUpdate,
     HolidayInfo,
@@ -167,6 +168,17 @@ def _forecast_for_date(date_str: str, office_present: Optional[int] = None) -> T
             date_str,
             reason="Aucun menu planifié pour cette date — veuillez d'abord planifier le menu.",
         )
+    # Override de présence persisté (le gestionnaire a confirmé/corrigé la
+    # présence du jour) : prioritaire sur la prédiction du modèle. Toute
+    # prévision de cette date (dashboard, refresh, GET /forecast/today)
+    # respecte alors l'override sans que l'UI ait à le retransmettre.
+    if office_present is None:
+        op = get_today_entry(date_str)
+        if op and op.get("presence_overridden"):
+            try:
+                office_present = int(op.get("presence") or 0)
+            except (TypeError, ValueError):
+                office_present = None
     try:
         result = predict_today(
             target_date=date_str,
@@ -226,16 +238,14 @@ def _to_forecast_model(data: dict) -> TodayForecast:
     )
 
 
-@app.get("/api/operations/today", response_model=OperationalResponse)
-def operations_today():
-    """Get today's operational data + forecast.
+def _build_today_response(today: str) -> OperationalResponse:
+    """Construit la réponse opérationnelle complète d'une journée de service.
 
     Le statut persistant est avancé automatiquement par l'horloge (Horaire du
     service de /settings) : à l'heure de début -> "service", à l'heure de fin
     -> "bilan_a_saisir". Jamais de retour en arrière, jamais au-delà de
     "bilan_a_saisir" (saisie et clôture restent des actes manuels).
     """
-    today = date.today().isoformat()
     settings = load_settings()
     phase = derive_service_phase()
     operational = get_today_entry(today)
@@ -262,6 +272,42 @@ def operations_today():
         service_end=settings["service_end"],
         bilan_deadline=settings["bilan_deadline"],
     )
+
+
+@app.get("/api/operations/today", response_model=OperationalResponse)
+def operations_today():
+    """Get today's operational data + forecast."""
+    return _build_today_response(date.today().isoformat())
+
+
+@app.post("/api/operations/today/presence-override", response_model=OperationalResponse)
+def override_presence(req: PresenceOverrideRequest):
+    """Le gestionnaire confirme/corrige la présence bureau du jour.
+
+    L'override est persisté et la prévision est immédiatement recalculée avec
+    cette présence : les résultats affichés (repas recommandés, taux de
+    participation) reflètent la valeur confirmée. ``override=False`` retire
+    l'override et revient à la prédiction du modèle.
+    """
+    today = date.today().isoformat()
+    entry = _today_or_new(today)
+    if req.override:
+        entry["presence"] = req.presence
+        entry["presence_overridden"] = True
+    else:
+        entry["presence_overridden"] = False
+    # Persiste d'abord l'état de l'override : le calcul suivant relit le dossier
+    # opérationnel (cas override=False → retour au modèle) via _forecast_for_date.
+    save_entry(entry)
+    # Recalcule la prévision avec l'override (ou le modèle après retrait) et
+    # persiste repas recommandés + présence dans le dossier opérationnel, pour
+    # rester cohérent avec /history et les prochains refreshes de l'UI.
+    fc = _forecast_for_date(today, office_present=req.presence if req.override else None)
+    entry["presence"] = fc.office_present
+    entry["forecast"] = fc.recommended_meals
+    entry["planned_meals"] = fc.recommended_meals
+    save_entry(entry)
+    return _build_today_response(today)
 
 
 @app.post("/api/operations", response_model=OperationalEntry)

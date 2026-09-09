@@ -238,10 +238,13 @@ def predict_today(
     if row_features is not None:
         ratio_pred = _predict_ratio_from_features(dep, row_features)
         # Préférer la valeur du fichier de features (observée pour l'historique,
-        # prédiction du replayer office pour l'horizon live).
-        op_val = _office_from_features_row(row_features)
-        if op_val is not None:
-            op_pred = op_val
+        # prédiction du replayer office pour l'horizon live) — SAUF si le
+        # gestionnaire a explicitement fourni une présence (override manuel) :
+        # dans ce cas on garde la valeur saisie, sinon l'override serait écrasé.
+        if office_present is None:
+            op_val = _office_from_features_row(row_features)
+            if op_val is not None:
+                op_pred = op_val
     else:
         ratio_pred = _predict_ratio_calendar_only(dep, d, op_pred)
 
