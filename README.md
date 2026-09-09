@@ -23,16 +23,18 @@ Tuteur de stage : M. Omar Otmaniou, Responsable IA.
 ```
 rie-project/
 ├── src/
-│   ├── forecasting/         # Layer 1 — prévision de la demande
-│   ├── menu_optimization/   # Layer 2 — optimisation des menus
-│   ├── procurement/         # Layer 3 — aide aux approvisionnements
-│   └── waste_tracking/      # Layer 4 — suivi du gaspillage
-├── dashboard/                # Layer 5 — tableau de bord opérationnel
-├── notebooks/                 # exploration uniquement — jamais la source de vérité
-├── docs/                      # cadrage, comptes-rendus, notes EDA
-├── data/                      # gitignored — aucune donnée réelle commitée
+│   ├── forecasting/daily_features.py   # feature engineering + prévision live
+│   ├── menu_optimization/              # catalogue de menus + nettoyage (`menu_catalog_py`, `menu_cleaning`)
+│   ├── calendar_utils.py               # jours fériés / Ramadan / dates islamiques
+│   └── operational_calendar.py         # semaine opérationnelle (dim → jeu)
+├── api/                    # backend FastAPI (prévision, menus, opérations, settings)
+├── dashboard/              # frontend Next.js — tableau de bord opérationnel
+├── notebooks/              # exploration uniquement — jamais la source de vérité
+├── docs/                   # cadrage, comptes-rendus, notes EDA
+├── data/                   # gitignored — aucune donnée réelle commitée
 │   ├── raw/
 │   └── processed/
+├── scripts/                # outillage opérationnel (features quotidiennes, backup, menu TS)
 ├── tests/
 ├── requirements.txt
 └── README.md
@@ -113,8 +115,8 @@ La tâche (`RIE_df_daily_features`) est relancée si le PC était éteint
 
 ## Dashboard & API
 
-Interface opérationnelle des 5 layers (prévision, menu, approvisionnement,
-gaspillage, planning). Backend FastAPI + frontend Next.js.
+Interface opérationnelle (prévision, menu/planning, approvisionnement,
+gaspillage, suivi opérationnel). Backend FastAPI + frontend Next.js.
 
 ```bash
 # backend (racine du dépôt) — API sur http://localhost:8000, docs sur /docs

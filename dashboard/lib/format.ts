@@ -4,10 +4,6 @@ export function formatNumber(n: number): string {
   return n.toLocaleString('fr-FR');
 }
 
-export function formatDZD(n: number): string {
-  return `${n.toLocaleString('fr-FR')} DZD`;
-}
-
 export function formatPercent(n: number, decimals = 1): string {
   return `${n.toFixed(decimals).replace('.', ',')}%`;
 }
