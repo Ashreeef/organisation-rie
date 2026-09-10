@@ -96,11 +96,11 @@ function roundToOne(n: number): number {
 }
 
 // Normalise un taux de gaspillage en pourcentage : les anciennes entrées le
-// stockent sous forme de fraction (≤ 1, ex. 0.0469) — le live utilise un
-// pourcentage (ex. 1.3).
+// The backend always persists a percentage (see /api/operations). Some older
+// UI code stored a fraction (≤1); that heuristic is ambiguous with genuine
+// sub-1% rates (0.27% → stored 0.3), so we trust the stored value as-is.
 function normalizeWasteRate(rate: number | undefined): number {
-  const r = rate ?? 0;
-  return r <= 1 ? r * 100 : r;
+  return rate ?? 0;
 }
 
 /* -------------------------------------------------------------------------- */

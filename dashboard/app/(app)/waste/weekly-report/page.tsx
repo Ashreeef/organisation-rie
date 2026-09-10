@@ -309,7 +309,7 @@ export default function WeeklyReportPage() {
       {/* ── Print header (only visible when printing) ───── */}
       <div className="print-only hidden print:block">
         <div className="border-b-2 border-foreground pb-4 mb-6">
-          <h1 className="text-2xl font-bold">Rapport Hebdomadaire — RIIE</h1>
+          <h1 className="text-2xl font-bold">Rapport Hebdomadaire — RIE</h1>
           <p className="text-sm text-muted-foreground mt-1">{weekLabel}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Généré le {formatDateLong(isoDate(new Date()))}
@@ -598,7 +598,7 @@ export default function WeeklyReportPage() {
       {/* ── Print footer (only visible when printing) ────── */}
       <div className="print-only hidden print:block mt-8 border-t border-border pt-4">
         <p className="text-xs text-muted-foreground text-center">
-          Rapport généré automatiquement par RIIE Intelligence — {formatDateLong(isoDate(new Date()))}
+          Rapport généré automatiquement par RIE Intelligence — {formatDateLong(isoDate(new Date()))}
         </p>
       </div>
     </div>

@@ -118,9 +118,39 @@ if (-not $SkipElectron) {
         # No code-signing certificate -> don't let electron-builder try to sign
         # (otherwise it blocks on signtool discovery).
         $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
-        npm run dist
-        if ($LASTEXITCODE -ne 0) { throw "Electron build failed" }
-        Write-Host "     Installer built at electron/dist/" -ForegroundColor Green
+        # Editor file-watchers (VS Code / opencode) temporarily hold dist\*.asar
+        # open, so rebuilding in place fails. Try fresh dist\ then dist_ok\; if
+        # those are still locked, fall back to a temp dir and copy the result
+        # into electron\release-<version>\ for a predictable location.
+        $ebOuts = @("dist", "dist_ok")
+        $builtOut = $null
+        foreach ($cand in $ebOuts) {
+            Remove-Item $cand -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path $cand) {
+                Write-Host "     $cand/ is locked by another process; trying next output" -ForegroundColor Yellow
+                continue
+            }
+            Write-Host "     electron-builder output: $cand/" -ForegroundColor Cyan
+            npm run dist -- "--config.directories.output=$cand"
+            if ($LASTEXITCODE -eq 0) { $builtOut = $cand; break }
+            Write-Host "     Build into $cand/ failed (locked mid-build); trying next output" -ForegroundColor Yellow
+        }
+        if (-not $builtOut) {
+            $builtOut = Join-Path $env:TEMP "opencode\rie-dist"
+            Remove-Item $builtOut -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "     electron-builder output: $builtOut (temp fallback)" -ForegroundColor Cyan
+            npm run dist -- "--config.directories.output=$builtOut"
+            if ($LASTEXITCODE -ne 0) { throw "Electron build failed (dist/ and dist_ok/ both locked mid-build)" }
+        }
+        $setup = Get-ChildItem $builtOut -Filter "Setup *.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($setup) {
+            $version = (Get-Content (Join-Path $Root "electron\package.json") -Raw | ConvertFrom-Json).version
+            $relDir = Join-Path $Root "electron\release-$version"
+            New-Item -ItemType Directory -Path $relDir -Force | Out-Null
+            Copy-Item $setup.FullName (Join-Path $relDir $setup.Name) -Force
+            Write-Host "     Installer built: $($setup.FullName)" -ForegroundColor Green
+            Write-Host "     Copy kept at: $(Join-Path $relDir $setup.Name)" -ForegroundColor Green
+        }
     } finally {
         Remove-Item Env:\CSC_IDENTITY_AUTO_DISCOVERY -ErrorAction SilentlyContinue
         Pop-Location
@@ -130,7 +160,7 @@ if (-not $SkipElectron) {
 }
 
 Write-Host "`n=== Build complete ===" -ForegroundColor Green
-$setup = Get-ChildItem (Join-Path $Root "electron\dist") -Filter "Setup *.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$setup = Get-ChildItem (Join-Path $Root "electron") -Recurse -Filter "Setup *.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($setup) {
     Write-Host "Installer: $($setup.FullName)" -ForegroundColor Cyan
 }
