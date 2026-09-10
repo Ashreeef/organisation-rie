@@ -130,7 +130,7 @@ if (-not $SkipElectron) {
 }
 
 Write-Host "`n=== Build complete ===" -ForegroundColor Green
-$setup = Get-ChildItem (Join-Path $Root "electron\dist") -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "Uninstall*" } | Select-Object -First 1
+$setup = Get-ChildItem (Join-Path $Root "electron\dist") -Filter "Setup *.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($setup) {
     Write-Host "Installer: $($setup.FullName)" -ForegroundColor Cyan
 }

@@ -9,7 +9,7 @@ const fs = require('fs');
 // Avoid GPU process crashes on some Windows machines (exit_code 0xC0000409).
 app.disableHardwareAcceleration();
 
-const LOG_FILE = path.join(app.getPath('temp'), 'rie-electron.log');
+const LOG_FILE = path.join(app.getPath('temp'), 'rie-intelligence.log');
 function log(msg) {
   try {
     fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
@@ -25,6 +25,10 @@ const POLL_INTERVAL_MS = 500;
 const isDev = !app.isPackaged;
 // npm start runs package.json "start" without the app being packaged.
 const isDevServerMode = process.env.ELECTRON_DEV === '1';
+
+// Keep a stable, product-branded data folder independent of the artifact name
+// ("rie-electron"). Creates %APPDATA%\rie-intelligence\data on first run.
+app.setPath('userData', path.join(app.getPath('appData'), 'rie-intelligence'));
 
 // Writable user data directory for persistence across installs/updates.
 const USER_DATA_DIR = path.join(app.getPath('userData'), 'data');
