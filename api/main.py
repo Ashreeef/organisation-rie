@@ -513,8 +513,10 @@ def daily_context() -> list[dict]:
     vide, jamais inventée.
     """
     from pathlib import Path as _P
-
-    proc = _P(__file__).resolve().parent.parent / "data" / "processed"
+    import os as _os
+    # In a PyInstaller bundle Path(__file__) resolves to _internal/, but the
+    # user's menus/features live in the writable data dir (RIE_DATA_DIR).
+    proc = _P(_os.environ.get("RIE_DATA_DIR", _P(__file__).resolve().parent.parent / "data")) / "processed"
 
     def _num(v):
         if v is None:

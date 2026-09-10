@@ -36,6 +36,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../dist/rie-api",
+        "to": "rie-api",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {

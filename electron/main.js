@@ -26,6 +26,9 @@ const isDev = !app.isPackaged;
 // npm start runs package.json "start" without the app being packaged.
 const isDevServerMode = process.env.ELECTRON_DEV === '1';
 
+// Writable user data directory for persistence across installs/updates.
+const USER_DATA_DIR = path.join(app.getPath('userData'), 'data');
+
 // Where the Next.js standalone server lives. In dev it is the repo's built
 // `dashboard/.next/standalone`; when packaged it lands in `resources/dashboard`
 // (see electron-builder extraResources).
@@ -134,11 +137,92 @@ function startApiServer() {
       log('FastAPI already running on :8000 - not spawning');
       return null;
     }
-    log('starting FastAPI via conda');
-    const args = ['run', '-n', 'DM_ENV', 'uvicorn', 'api.main:app', '--port', '8000', '--no-access-log'];
-    apiChild = spawnHidden('conda', args, { cwd: ROOT });
+    if (isDev) {
+      log('starting FastAPI via conda (dev)');
+      const args = ['run', '-n', 'DM_ENV', 'uvicorn', 'api.main:app', '--port', '8000', '--no-access-log'];
+      apiChild = spawnHidden('conda', args, { cwd: ROOT });
+    } else {
+      log('starting FastAPI via bundled exe (prod)');
+      // Ensure writable data directory exists and seed first-run defaults.
+      initUserDataDir();
+      const apiDir = path.join(process.resourcesPath, 'rie-api');
+      const apiExe = path.join(apiDir, 'rie-api.exe');
+      // PyInstaller 6.x places packaged data/models under `_internal/`.
+      // Pointing at the wrong dir made the API fall back to the config-only
+      // pseudo-deployment (constant 230 prediction).
+      const env = Object.assign({}, process.env, {
+        RIE_DATA_DIR: USER_DATA_DIR,
+        RIE_MODELS_DIR: path.join(apiDir, '_internal', 'models'),
+      });
+      apiChild = spawnHidden(apiExe, [], { cwd: apiDir, env: env });
+    }
     return apiChild;
   });
+}
+
+function initUserDataDir() {
+  // Create writable data directory and copy seed files on first run.
+  try {
+    fs.mkdirSync(path.join(USER_DATA_DIR, 'operational'), { recursive: true });
+    fs.mkdirSync(path.join(USER_DATA_DIR, 'processed'), { recursive: true });
+    // Seed settings.json with defaults if missing.
+    const settingsDest = path.join(USER_DATA_DIR, 'settings.json');
+    if (!fs.existsSync(settingsDest)) {
+      const defaults = {
+        site_name: 'Siège — Alger',
+        safety_margin_pct: 4.0,
+        service_start: '12:30',
+        service_end: '13:30',
+        bilan_deadline: '15:00',
+      };
+      fs.writeFileSync(settingsDest, JSON.stringify(defaults, null, 2), 'utf-8');
+      log('seeded default settings.json');
+    }
+    // Seed planned_menus.csv if missing.
+    const menusDest = path.join(USER_DATA_DIR, 'processed', 'planned_menus.csv');
+    if (!fs.existsSync(menusDest)) {
+      fs.writeFileSync(menusDest, 'date,entrees,plat_principal_1,plat_principal_2,plat_principal_1_id,plat_principal_2_id\n', 'utf-8');
+      log('seeded empty planned_menus.csv');
+    }
+    // Seed unknown_dishes.csv if missing.
+    const unknownDest = path.join(USER_DATA_DIR, 'processed', 'unknown_dishes.csv');
+    if (!fs.existsSync(unknownDest)) {
+      fs.writeFileSync(unknownDest, 'text_norm,text,count,first_seen,last_seen\n', 'utf-8');
+      log('seeded empty unknown_dishes.csv');
+    }
+    seedReferenceData(processedDir());
+    log('userData dir ready: ' + USER_DATA_DIR);
+  } catch (err) {
+    log('initUserDataDir error: ' + err.message);
+  }
+}
+
+// Read-only reference data that the forecasting pipeline needs alongside the
+// user's own data: office-presence history (real_clean.csv), the training
+// feature table (features_train.csv) and the feature list. They ship inside the
+// bundle (_internal/data/processed) and are copied to the writable data dir on
+// first run so forecast.py can find them, exactly like the other seeds above.
+function processedDir() {
+  if (isDev) {
+    return path.join(ROOT, 'data', 'processed');
+  }
+  return path.join(process.resourcesPath, 'rie-api', '_internal', 'data', 'processed');
+}
+
+function seedReferenceData(src) {
+  const files = ['real_clean.csv', 'features_train.csv', 'feature_list.txt'];
+  for (const f of files) {
+    try {
+      const from = path.join(src, f);
+      const to = path.join(USER_DATA_DIR, 'processed', f);
+      if (fs.existsSync(from) && !fs.existsSync(to)) {
+        fs.copyFileSync(from, to);
+        log('seeded reference data: ' + f);
+      }
+    } catch (err) {
+      log('seedReferenceData ' + f + ' error: ' + err.message);
+    }
+  }
 }
 
 function startNextServer() {
@@ -155,13 +239,26 @@ function killChild(child) {
   if (!child || !child.pid) return;
   log('killChild pid=' + child.pid);
   try {
-    if (process.platform === 'win32') {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-    } else {
-      child.kill('SIGTERM');
-    }
+    // 1. Synchronous terminate of the direct child (reliable even while the
+    //    Electron process is tearing down).
+    child.kill('SIGTERM');
   } catch (_) {
     /* ignore */
+  }
+  if (process.platform === 'win32') {
+    try {
+      // 2. Fallback: taskkill the whole tree. Spawn it DETACHED + unref so it
+      //    survives Electron's immediate exit (a non-detached taskkill dies
+      //    with the parent before it can do its job, leaving orphan servers).
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+        detached: true,
+      });
+      killer.unref();
+    } catch (_) {
+      /* ignore */
+    }
   }
 }
 

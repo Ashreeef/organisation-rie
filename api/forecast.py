@@ -7,6 +7,7 @@ Cascade architecture:
   3. Calibration: DOW offsets + shrinkage → final employees_count
 """
 import json
+import os
 import pickle
 import logging
 from datetime import datetime
@@ -23,8 +24,8 @@ from src.operational_calendar import is_operational_day  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
+MODELS_DIR = Path(os.environ.get("RIE_MODELS_DIR", Path(__file__).resolve().parent.parent / "models"))
+DATA_DIR = Path(os.environ.get("RIE_DATA_DIR", Path(__file__).resolve().parent.parent / "data")) / "processed"
 
 _deploy_cache = None
 _sub_cache = None

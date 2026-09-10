@@ -6,12 +6,13 @@ sécurité) et le contexte opérationnel (horaires), pas seulement l'UI.
 """
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_FILE = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+SETTINGS_FILE = Path(os.environ.get("RIE_DATA_DIR", Path(__file__).resolve().parent.parent / "data")) / "settings.json"
 
 DEFAULTS: dict = {
     "site_name": "Siège — Alger",

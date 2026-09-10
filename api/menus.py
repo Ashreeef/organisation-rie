@@ -8,6 +8,7 @@ C'est le fichier consumé par src/forecasting/daily_features.py pour
 reconstruire les features des jours cibles à partir des vrais menus.
 """
 import logging
+import os
 import sys
 from datetime import date
 import pandas as pd
@@ -16,7 +17,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "processed"
+DATA_DIR = Path(os.environ.get("RIE_DATA_DIR", Path(__file__).resolve().parent.parent / "data")) / "processed"
 MENUS_FILE = DATA_DIR / "planned_menus.csv"
 UNKNOWN_FILE = DATA_DIR / "unknown_dishes.csv"
 
