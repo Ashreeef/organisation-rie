@@ -42,11 +42,14 @@ from .models import (
     HealthResponse,
     BlendScores,
     MenuPlan,
+    UnknownDishLog,
     LifecycleStatusUpdate,
     PlannedMealsUpdate,
+    PresenceOverrideRequest,
     BilanSubmission,
     SettingsUpdate,
     HolidayInfo,
+    RegenerateFeaturesRequest,
 )
 from .forecast import (
     predict_today,
@@ -61,7 +64,7 @@ from .operations import (
     advance_status_by_time,
     derive_service_phase,
 )
-from .menus import get_menus, get_menu, upsert_menu, delete_menu
+from .menus import get_menus, get_menu, upsert_menu, delete_menu, validate_menu_plan, log_unknown_dish, get_unknown_dishes, _trigger_feature_regen
 from .settings import load_settings, save_settings
 from src.operational_calendar import iso_next_operational_day, is_operational_day
 from src.calendar_utils import holiday_name, is_public_holiday, is_ramadan
@@ -91,6 +94,18 @@ _start_time = time.time()
 @app.get("/api/health", response_model=HealthResponse)
 def health():
     """Health check endpoint - always public."""
+    info = get_model_info()
+    uptime = f"{int(time.time() - _start_time)}s"
+    return HealthResponse(
+        status="ok",
+        models_loaded=info["total_models"],
+        uptime=uptime,
+    )
+
+
+@app.get("/health", response_model=HealthResponse)
+def health_probe():
+    """Liveness probe used by the Electron launcher - always public."""
     info = get_model_info()
     uptime = f"{int(time.time() - _start_time)}s"
     return HealthResponse(
@@ -165,6 +180,17 @@ def _forecast_for_date(date_str: str, office_present: Optional[int] = None) -> T
             date_str,
             reason="Aucun menu planifié pour cette date — veuillez d'abord planifier le menu.",
         )
+    # Override de présence persisté (le gestionnaire a confirmé/corrigé la
+    # présence du jour) : prioritaire sur la prédiction du modèle. Toute
+    # prévision de cette date (dashboard, refresh, GET /forecast/today)
+    # respecte alors l'override sans que l'UI ait à le retransmettre.
+    if office_present is None:
+        op = get_today_entry(date_str)
+        if op and op.get("presence_overridden"):
+            try:
+                office_present = int(op.get("presence") or 0)
+            except (TypeError, ValueError):
+                office_present = None
     try:
         result = predict_today(
             target_date=date_str,
@@ -224,16 +250,14 @@ def _to_forecast_model(data: dict) -> TodayForecast:
     )
 
 
-@app.get("/api/operations/today", response_model=OperationalResponse)
-def operations_today():
-    """Get today's operational data + forecast.
+def _build_today_response(today: str) -> OperationalResponse:
+    """Construit la réponse opérationnelle complète d'une journée de service.
 
     Le statut persistant est avancé automatiquement par l'horloge (Horaire du
     service de /settings) : à l'heure de début -> "service", à l'heure de fin
     -> "bilan_a_saisir". Jamais de retour en arrière, jamais au-delà de
     "bilan_a_saisir" (saisie et clôture restent des actes manuels).
     """
-    today = date.today().isoformat()
     settings = load_settings()
     phase = derive_service_phase()
     operational = get_today_entry(today)
@@ -260,6 +284,42 @@ def operations_today():
         service_end=settings["service_end"],
         bilan_deadline=settings["bilan_deadline"],
     )
+
+
+@app.get("/api/operations/today", response_model=OperationalResponse)
+def operations_today():
+    """Get today's operational data + forecast."""
+    return _build_today_response(date.today().isoformat())
+
+
+@app.post("/api/operations/today/presence-override", response_model=OperationalResponse)
+def override_presence(req: PresenceOverrideRequest):
+    """Le gestionnaire confirme/corrige la présence bureau du jour.
+
+    L'override est persisté et la prévision est immédiatement recalculée avec
+    cette présence : les résultats affichés (repas recommandés, taux de
+    participation) reflètent la valeur confirmée. ``override=False`` retire
+    l'override et revient à la prédiction du modèle.
+    """
+    today = date.today().isoformat()
+    entry = _today_or_new(today)
+    if req.override:
+        entry["presence"] = req.presence
+        entry["presence_overridden"] = True
+    else:
+        entry["presence_overridden"] = False
+    # Persiste d'abord l'état de l'override : le calcul suivant relit le dossier
+    # opérationnel (cas override=False → retour au modèle) via _forecast_for_date.
+    save_entry(entry)
+    # Recalcule la prévision avec l'override (ou le modèle après retrait) et
+    # persiste repas recommandés + présence dans le dossier opérationnel, pour
+    # rester cohérent avec /history et les prochains refreshes de l'UI.
+    fc = _forecast_for_date(today, office_present=req.presence if req.override else None)
+    entry["presence"] = fc.office_present
+    entry["forecast"] = fc.recommended_meals
+    entry["planned_meals"] = fc.recommended_meals
+    save_entry(entry)
+    return _build_today_response(today)
 
 
 @app.post("/api/operations", response_model=OperationalEntry)
@@ -412,6 +472,27 @@ def list_menus(start: Optional[str] = None, end: Optional[str] = None):
     return [MenuPlan(**m) for m in get_menus(start=start, end=end)]
 
 
+# Déclarées AVANT /api/menus/{date} — FastAPI matche dans l'ordre de déclaration.
+@app.post("/api/menus/unknown-dish", response_model=UnknownDishLog)
+def create_unknown_dish(entry: UnknownDishLog):
+    """Enregistre un plat non reconnu au catalogue (candidat à examiner).
+
+    Si le texte résout désormais à un dish (alias ajouté depuis), retourne
+    known=True sans écrire. Sinon, incrémente la fréquence de rencontre du
+    texte normalisé (même plat saisi différemment = même entrée).
+    """
+    try:
+        return UnknownDishLog(**log_unknown_dish(entry.text))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.get("/api/menus/unknown-dish", response_model=list[UnknownDishLog])
+def list_unknown_dishes():
+    """Liste les candidats à examiner, triés par fréquence décroissante."""
+    return [UnknownDishLog(**u) for u in get_unknown_dishes()]
+
+
 @app.get("/api/menus/{date}", response_model=MenuPlan)
 def read_menu(date: str):
     """Retourne le menu planifié d'une date précise."""
@@ -432,8 +513,10 @@ def daily_context() -> list[dict]:
     vide, jamais inventée.
     """
     from pathlib import Path as _P
-
-    proc = _P(__file__).resolve().parent.parent / "data" / "processed"
+    import os as _os
+    # In a PyInstaller bundle Path(__file__) resolves to _internal/, but the
+    # user's menus/features live in the writable data dir (RIE_DATA_DIR).
+    proc = _P(_os.environ.get("RIE_DATA_DIR", _P(__file__).resolve().parent.parent / "data")) / "processed"
 
     def _num(v):
         if v is None:
@@ -522,16 +605,51 @@ def upcoming_holidays(days: int = 7, from_date: Optional[str] = None) -> list[Ho
     return out
 
 
+@app.post("/api/menus/regenerate", response_model=dict)
+def regenerate_menus(req: RegenerateFeaturesRequest):
+    """Régénère les features live de toutes les dates planifiées de la fenêtre
+    [start, end], pour que les prévisions reflètent immédiatement les menus en
+    cours. Ne fait jamais échouer la requête sur un échec partiel.
+
+    Retourne le nombre de dates régénérées et la liste d'éventuels échecs.
+    """
+    planned = [m["date"] for m in get_menus(start=req.start, end=req.end)]
+    ok = 0
+    failed: list[str] = []
+    for d in planned:
+        if _trigger_feature_regen(d):
+            ok += 1
+        else:
+            failed.append(d)
+    try:
+        reset_features_cache()
+    except Exception:
+        pass
+    return {"ok": True, "regenerated": ok, "failed": failed, "requested": len(planned)}
+
+
 @app.post("/api/menus", response_model=MenuPlan)
 def create_menu(entry: MenuPlan):
-    """Crée ou met à jour le menu planifié d'une date."""
+    """Crée ou met à jour le menu planifié d'une date.
+
+    Phase 4 : un plat principal (plat_principal_1) non vide doit résoudre à un
+    id du catalogue — sinon 422 (le gestionnaire doit choisir dans la liste).
+    """
+    try:
+        validate_menu_plan(entry.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return MenuPlan(**upsert_menu(entry.model_dump()))
 
 
 @app.put("/api/menus/{date}", response_model=MenuPlan)
 def update_menu(date: str, entry: MenuPlan):
-    """Met à jour le menu planifié d'une date précise."""
+    """Met à jour le menu planifié d'une date précise (règle Phase 4 idem POST)."""
     entry.date = date
+    try:
+        validate_menu_plan(entry.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     return MenuPlan(**upsert_menu(entry.model_dump()))
 
 

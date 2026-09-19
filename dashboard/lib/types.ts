@@ -212,6 +212,10 @@ export interface TodayState {
   plannedMeals: number;
   actualMealsServed: number;
   overrideReason: string | null;
+  // Vrai quand la présence du jour a été confirmée/corrigée manuellement par
+  // le gestionnaire (override) : la prévision est alors basée sur cette valeur
+  // (persistée côté backend), pas sur la prédiction du modèle.
+  presenceOverridden: boolean;
   bilan: BilanRecord | null;
   // True quand le bilan du jour est clos (statut 'cloturee'). Source unique :
   // backend (calculé depuis le statut). L'UI ne dérive jamais ceci d'un CSS.

@@ -70,8 +70,9 @@ from src.menu_optimization.menu_catalog_py import (  # noqa: E402
     CANONICAL_MENU_FEATURES,
 )
 
-DATA_DIR = REPO_ROOT / "data" / "processed"
-MODELS_DIR = REPO_ROOT / "models"
+import os
+DATA_DIR = Path(os.environ.get("RIE_DATA_DIR", str(REPO_ROOT / "data"))) / "processed"
+MODELS_DIR = Path(os.environ.get("RIE_MODELS_DIR", str(REPO_ROOT / "models")))
 HISTORY_FILE = DATA_DIR / "real_clean.csv"
 OUT_FILE = DATA_DIR / "features_live.csv"
 PLANNED_MENUS_FILE = DATA_DIR / "planned_menus.csv"

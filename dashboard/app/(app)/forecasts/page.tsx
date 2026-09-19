@@ -72,6 +72,11 @@ export default function ForecastsPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
   const [generatedAt, setGeneratedAt] = React.useState<Date | null>(null);
+  const [marginPct, setMarginPct] = React.useState(4);
+
+  React.useEffect(() => {
+    api.getSettings().then((s) => setMarginPct(s.safetyMarginPct)).catch(() => {});
+  }, []);
 
   const load = React.useCallback(async (sunday: Date) => {
     setLoading(true);
@@ -265,7 +270,7 @@ export default function ForecastsPage() {
           <p className="mt-2 text-3xl font-semibold text-primary">
             {available.length > 0 ? formatNumber(totalPrep) : '—'}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">avec marge de sécurité +6%</p>
+          <p className="mt-1 text-xs text-muted-foreground">avec marge de sécurité +{marginPct}%</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Jour le plus chargé</p>
@@ -452,7 +457,7 @@ export default function ForecastsPage() {
           <div className="flex flex-wrap items-center gap-4 text-xs">
             {[
               ['Prévision modèle', '#34D399'],
-              ['À préparer (+6%)', '#009453'],
+              [`À préparer (+${marginPct}%)`, '#009453'],
             ].map(([label, color]) => (
               <span key={label} className="flex items-center gap-1.5">
                 <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: color }} />
@@ -482,7 +487,7 @@ export default function ForecastsPage() {
                   tickFormatter={(v: number) => formatNumber(v)}
                   domain={yDomain}
                 />
-                <Tooltip content={<WeekTooltip />} cursor={{ fill: 'hsl(var(--muted) / 0.4)' }} />
+                <Tooltip content={<WeekTooltip marginPct={marginPct} />} cursor={{ fill: 'hsl(var(--muted) / 0.4)' }} />
                 <Bar dataKey="prévision" name="Prévision modèle" fill="#34D399" radius={[4, 4, 0, 0]} barSize={18}>
                   <ErrorBar dataKey="errObj" direction="y" width={6} strokeWidth={1.5} stroke="#009453" />
                 </Bar>
@@ -512,6 +517,7 @@ export default function ForecastsPage() {
 
 interface WeekTooltipProps {
   active?: boolean;
+  marginPct?: number;
   payload?: { payload: {
     fullDay: string;
     àPréparer: number | null;
@@ -523,7 +529,7 @@ interface WeekTooltipProps {
   } }[];
 }
 
-function WeekTooltip({ active, payload }: WeekTooltipProps) {
+function WeekTooltip({ active, marginPct = 4, payload }: WeekTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   const p = payload[0].payload;
   return (
@@ -533,7 +539,7 @@ function WeekTooltip({ active, payload }: WeekTooltipProps) {
         <div className="space-y-1 text-xs">
           <p className="flex justify-between gap-3"><span className="text-muted-foreground">Prévision modèle :</span><span className="font-medium text-foreground">{p.prévision != null ? `${formatNumber(p.prévision)} repas` : '—'}</span></p>
           <p className="flex justify-between gap-3"><span className="text-muted-foreground">Intervalle de confiance :</span><span className="font-medium text-foreground">{p.interval} repas</span></p>
-          <p className="flex justify-between gap-3"><span className="text-muted-foreground">À préparer (+6%) :</span><span className="font-medium text-foreground">{p.àPréparer != null ? `${formatNumber(p.àPréparer)} repas` : '—'}</span></p>
+          <p className="flex justify-between gap-3"><span className="text-muted-foreground">À préparer (+{marginPct}%) :</span><span className="font-medium text-foreground">{p.àPréparer != null ? `${formatNumber(p.àPréparer)} repas` : '—'}</span></p>
           <p className="flex justify-between gap-3"><span className="text-muted-foreground">Employés au bureau :</span><span className="font-medium text-foreground">{p.office != null ? `${formatNumber(p.office)} prévus` : '—'}</span></p>
           {p.menu && (
             <p className="flex justify-between gap-3"><span className="text-muted-foreground">Menu :</span><span className="max-w-[160px] truncate font-medium text-foreground">{p.menu}</span></p>

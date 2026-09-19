@@ -28,6 +28,8 @@ import {
   RefreshCcw,
   Utensils,
   Timer,
+  Loader2,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -113,6 +115,11 @@ export default function DashboardPage() {
   const [prepared, setPrepared] = React.useState('');
   const [served, setServed] = React.useState('');
   const [comment, setComment] = React.useState('');
+
+  // Présence du jour — confirmation/correction manuelle par le gestionnaire
+  const [editingPresence, setEditingPresence] = React.useState(false);
+  const [presenceInput, setPresenceInput] = React.useState('');
+  const [savingPresence, setSavingPresence] = React.useState(false);
 
   // Horloge locale (minute) : rafraîchit le GET /today à chaque minute pendant
   // la fenêtre de service, afin que le backend puisse faire avancer le statut
@@ -341,6 +348,53 @@ export default function DashboardPage() {
     toast.info('Bilan rouvert — corrigez puis enregistrez à nouveau');
   };
 
+  // Présence du jour : confirmation/correction manuelle. L'override est
+  // persisté côté backend et la prévision est recalculée avec la valeur saisie.
+  const startPresenceEdit = () => {
+    setPresenceInput(String(forecast.officePresent));
+    setEditingPresence(true);
+  };
+
+  const cancelPresenceEdit = () => {
+    setEditingPresence(false);
+    setPresenceInput('');
+  };
+
+  const handleSavePresence = async () => {
+    const val = Number(presenceInput);
+    if (!Number.isFinite(val) || val < 0) {
+      toast.error('Veuillez saisir un nombre valide.');
+      return;
+    }
+    setSavingPresence(true);
+    try {
+      const { state, forecast: fc } = await api.setOfficePresence(Math.round(val));
+      setToday(state);
+      if (fc.forecastAvailable) setForecast(fc);
+      setEditingPresence(false);
+      toast.success('Présence confirmée — prévision recalculée');
+    } catch {
+      toast.error("Impossible d'enregistrer la présence");
+    } finally {
+      setSavingPresence(false);
+    }
+  };
+
+  const handleClearPresenceOverride = async () => {
+    setSavingPresence(true);
+    try {
+      const { state, forecast: fc } = await api.setOfficePresence(null);
+      setToday(state);
+      if (fc.forecastAvailable) setForecast(fc);
+      setEditingPresence(false);
+      toast.success('Retour à la prévision automatique du modèle');
+    } catch {
+      toast.error("Impossible d'annuler l'override");
+    } finally {
+      setSavingPresence(false);
+    }
+  };
+
   // Horloge du service — phase locale (affichage) + comptes à rebours.
   const phaseLocal = servicePhaseLocal(now, today.serviceStart, today.serviceEnd, today.bilanDeadline);
   const minUntilStart = hhmmToMinutesAhead(today.serviceStart, now);
@@ -445,8 +499,73 @@ export default function DashboardPage() {
 
           <div className="mt-6 grid grid-cols-3 gap-6 text-center">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employés au bureau</p>
-              <p className="mt-1 text-4xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
+              <div className="flex items-center justify-center gap-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employés au bureau</p>
+                {!editingPresence && !savingPresence && (
+                  <button
+                    type="button"
+                    onClick={startPresenceEdit}
+                    className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                    title="Confirmer / corriger la présence du jour"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {editingPresence ? (
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={presenceInput}
+                    onChange={(e) => setPresenceInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void handleSavePresence(); }}
+                    className="h-9 w-24 text-center text-lg font-bold"
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-9 px-2"
+                    onClick={() => void handleSavePresence()}
+                    disabled={savingPresence}
+                    title="Enregistrer"
+                  >
+                    {savingPresence ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-9 px-2"
+                    onClick={cancelPresenceEdit}
+                    disabled={savingPresence}
+                    title="Annuler"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-1 flex items-center justify-center gap-2">
+                  <p className="text-4xl font-bold text-foreground">{formatNumber(forecast.officePresent)}</p>
+                  {today.presenceOverridden && (
+                    <>
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <button
+                        type="button"
+                        onClick={() => void handleClearPresenceOverride()}
+                        disabled={savingPresence}
+                        className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                        title="Revenir à la prévision automatique du modèle"
+                      >
+                        <RefreshCcw className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              {today.presenceOverridden && !editingPresence && (
+                <p className="mt-1 text-[10px] font-medium text-green-600">Présence confirmée manuellement</p>
+              )}
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-primary">Repas à préparer</p>

@@ -1,0 +1,317 @@
+"""Tests de la logique de matching find_dish/findDishByName (Phase 3 – règles strictes).
+
+Couvre :
+  1. Cas « probes » Phase 1 (11 faux positifs identifiés).
+  2. Cas mesurés Phase 2 (contamination, « OU », rows non mappées).
+  3. Parité ALLOW_TOKENS Python ↔ menu-catalog.ts.
+"""
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+from src.menu_optimization.menu_catalog_py import ALLOW_TOKENS, find_dish
+
+TS_PATH = Path(__file__).resolve().parent.parent / "dashboard" / "lib" / "menu-catalog.ts"
+
+# ───────── helpers ──────────────────────────────────────────────────────────
+def _id(text):
+    dish = find_dish(text)
+    return dish["id"] if dish else None
+
+
+# ───────── parité ALLOW ─────────────────────────────────────────────────────
+class TestAllowSync:
+    def test_allow_tokens_vs_ts(self):
+        ts = TS_PATH.read_text(encoding="utf-8")
+        m = re.search(r'const ALLOW = new Set\((\[.*?\])\)', ts, re.DOTALL)
+        assert m, "ALLOW introuvable dans menu-catalog.ts"
+        ts_allow = set(json.loads(m.group(1)))
+        assert ALLOW_TOKENS == ts_allow, (
+            f"Désynchronisation ALLOW : +{ts_allow - ALLOW_TOKENS} "
+            f"-{ALLOW_TOKENS - ts_allow}"
+        )
+
+
+# ───────── probes Phase 1 : les 11 faux positifs doivent être killés ────────
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        # --- 11 faux positifs identifiés en Phase 1 ---
+        ("sole",                                  "sole-farcie"),      # token0 prefix → sole-farcie (premier dish « sole »)
+        ("escalope",                              "escalope-grille"),   # token0 prefix → escalope-grille (premier dish « escalope »)
+        ("riz",                                   None),               # ALLOW → weak bloqué → None
+        ("pomme",                                 None),               # ALLOW → weak bloqué → None
+        ("pates",                                 None),               # ALLOW → weak bloqué → None
+        ("pate",                                  None),               # idem
+        ("creme",                                 None),               # ALLOW → weak bloqué → None
+        ("boeuf",                                 "navarin-boeuf"),    # alias « Boeuf Navarin » token0 → weak → navarin
+        ("veaux",                                 None),               # aucun alias / dish
+        ("brochette",                             "brochette-royale"), # alias Brochette Royale token0 → weak → brochette-royale
+        # --- cas de Phase 1 qui restaient identiques ---
+        ("sole farci et pates coudes",            None),              # alias inexistante (l'alias catalogue est « Sole Farci + Légumes… »)
+        ("poulet roti basquaise",                 None),               # alias « Poulet rôti » + basquaise non ALLOW → None
+    ],
+)
+def test_kill_phase1_false_positives(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── cas exacts / légitimes (doivent toujours matcher) ─────────────────
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("poulet roti",                          "poulet-roti"),
+        ("escalope grillee",                     "escalope-grille"),
+        ("saut\u00e9 de b\u0153uf",             "saute-boeuf"),   # ligature
+        ("Saut\u00e9 de boeuf",                  "saute-boeuf"),   # ASCII
+        ("navarin de b\u0153uf",                 "navarin-boeuf"),
+        ("Navarin de boeuf",                     "navarin-boeuf"),
+        # collision (Phase 1) : la galette doit aller vers dinde-hachee-gratinee
+        ("galette de dinde gratinee au fromage", "dinde-hachee-gratinee"),
+        ("Galette de dinde gratin\u00e9e au fromage",
+                                                 "dinde-hachee-gratinee"),
+        ("kbab",                                 "kbab-poulet"),
+        ("rechta",                               "rechta-poulet"),
+        ("dolma",                                "doulma"),
+        # alias exacte : « Chawarma » (pas « chawarma » brut)
+        ("Chawarma",                             "chawarma"),
+        ("chawarma",                             "chawarma"),
+        ("tacos",                                "tacos"),
+        ("couscous",                             "couscous-poulet"),
+    ],
+)
+def test_exact_matches(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── règles de préfixe + allowance (Phase 2 rows) ─────────────────────
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        # « Roulé de viande +Riz » → name exact « Roulé de viande » + leftover riz ∈ ALLOW
+        ("Roul\u00e9 de viande +Riz",            "rouleau-viande"),
+        # « Rôti d'Bœuf + Pomme Rissolée » → apostrophe nettoyée, « roti d boeuf »
+        # alias « R\u00f4ti de b\u0153uf » [roti,de,boeuf] ≠ [roti,d,boeuf] → None
+        ("R\u00f4ti d'B\u0153uf + Pomme Rissol\u00e9e",
+                                                 None),
+        # Escalope grillée + P\u00e2tes \u00e0 la cr\u00e8me : alias exact existe
+        ("Escalope grill\u00e9e + P\u00e2tes \u00e0 la cr\u00e8me",
+                                                 "escalope-grille"),
+        # Escalope pan\u00e9e + Pomme espagnole : alias exacte (token-equality)
+        ("Escalope pan\u00e9e + Pomme espagnole", "escalope-panee"),
+        # Escalope pan\u00e9 + Riz libanais : alias « Escalope pan\u00e9e » ≠ prefix → None
+        ("Escalope pan\u00e9 + Riz libanais",    None),
+    ],
+)
+def test_prefix_and_allowance(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── Phase 5 : « OU » ne doit pas être autorisé dans les leftovers ───
+@pytest.mark.parametrize(
+    "input_text",
+    [
+        "Merlan frit + Riz OU Kbab",
+        "Sole Farci et P\u00e2tes Coudes OU Moussaka",
+        # cas réels 2025-data (Phase 2) ajoutés à la demande de validation
+        "Pomme de terre OU Riz",
+        "Poulet \u00e0 la Mexicaine OU Rechta",
+    ],
+)
+def test_ou_combos_unmapped(input_text):
+    assert _id(input_text) is None
+
+
+# ───────── split « + » : les alias combos legit contenant « + » doivent
+# ───────── matcher ENTIERS (égalité de tokens, std 100+len) — pas via un token isolé
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("Cuisse de poulet grill\u00e9e + Pomme croquette sauce mexicaine",
+                                                 "cuisse-poulet-grille"),
+        ("Escalope grill\u00e9e + Gratin dauphinois",
+                                                 "escalope-grille"),
+        ("Escalope pan\u00e9e + Riz oriental",   "escalope-panee"),
+        ("Steak Haché de Dinde + Riz aux petits l\u00e9gumes",
+                                                 "steak-hache-dinde"),
+    ],
+)
+def test_split_plus_alias_combos_stay_whole(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── tajine-zaligou : ancien first-match-wins volait la ligne ────────
+def test_tajine_zaligou_exact():
+    """Row « Tajine zaligou » devait mapper tajine-zaligou (exact name)."""
+    assert _id("Tajine zaligou") == "tajine-zaligou"
+
+
+# ───────── slash et séparateurs ─────────────────────────────────────────────
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("Poulet r\u00f4ti / Chekchouka",         "poulet-roti"),
+        ("Escalope en sauce + Pomme saut\u00e9e + L\u00e9gumes",
+                                                 "escalope-creme"),
+    ],
+)
+def test_separators(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── choices assumés (short-search / mots isolés) ─────────────────────
+# Ces mots isolés résolvent par « short-search » (token0 == un seul mot), qui
+# choisit le PREMIER dish par ordre du tableau correspondant, sans préférence
+# sémantique. C'est un choix ASSUMÉ (Phase 3) et documenté ici exprès :
+#
+#   - Ce ne sont plus des faux positifs CROSS-CATÉGORIE (Phase 1 : « sole »
+#     pointait vers un plat de poulet). Aujourd'hui ils pointent vers le bon type
+#     de protéine : « sole » → un plat de SOLE, « escalope » → un plat d'escalope.
+#   - Vérification CSV (Phase 3) : ces mots isolés existent vraiment dans
+#     l'historique (real.csv) — « Escalope », « Sandwich », « Doulma »,
+#     « Moussaka », « Couscous », « Kbab », « Tacos », « Chawarma »,
+#     « Chichtaouk », « Goujonnette », « Lasagne », « Maadnoussia », « Mtawem ».
+#     La majorité sont des noms propres de plats (univ, sans ambiguïté). Les
+#     seules ambiguïtés intra-catégorie réelles sont « Escalope » → escalope-grille
+#     (1 ligne / 666) et « Chichtaouk » → 1 seul dish. Aucun mot isolé historique
+#     n'est CROSS-catégorie.
+#   - Le risque résiduel (mauvais plat d'escalope/sole choisi « par ordre du
+#     tableau ») se réduira mécaniquement en Phase 4 : la saisie libre du planner
+#     sera fermée, donc ce chemin ne concernera plus que la réinterprétation de
+#     texte historique, pas la saisie future.
+#
+# Si tu modifies ces attentes, c'est donc un changement de politique, pas un bug.
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("sole",        "sole-farcie"),        # premier dish de type « sole »
+        ("escalope",    "escalope-grille"),     # 1re escalope (ordre catalogue)
+        ("dinde",       "dinde-hachee-gratinee"),
+        ("brochette",   "brochette-royale"),
+        ("chawarma",    "chawarma"),
+        # mots isolés À ALLOW → None (pas de dish ; blocage voulu)
+        ("riz",         None),
+        ("pomme",       None),
+        ("pates",       None),
+        ("pate",        None),
+        ("creme",       None),
+        ("sauce",       None),
+        ("veau",        None),
+        ("fromage",     None),
+        ("salade",      None),   # ancien faux négatif → reste None
+        ("briket",      None),   # idem
+    ],
+)
+def test_shortsearch_policy(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── Tokens ALLOW ajoutés en Phase 3 (post-catégorisation) ─────────────
+# Chacun doit rester un mot isolé → None (ShortSearch bloqué) : pas un nom de plat.
+# (testés aussi dans TestAllowSync via la parité TS↔Py)
+@pytest.mark.parametrize(
+    "input_text",
+    [
+        "pate", "chinoise", "cha3ria", "viande", "farci", "flou", "italienne",
+        "champignons", "pistou", "panee", "napolitaine", "julienne",
+        "tchekhouka", "chakhchouka", "bourghoul", "terre", "florentine",
+        "maison", "provencale", "turque", "rotte", "pasta", "tagliatelle",
+        "tourte", "clafoutis",
+    ],
+)
+def test_allow_tokens_stay_silent_isolated(input_text):
+    assert _id(input_text) is None
+
+
+# Le prefix-match des dishes dont le nom contient farci/viande ne doit PAS changer
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("poulet farci",                     "poulet-farci"),
+        ("cuisse de poulet farcie",          "cuisse-poulet-farcie"),
+        ("blanc de poulet farci",            "blanc-poulet-farci"),
+        ("lasagne viande",                   "lasagne-viande"),
+        ("moussaka viande",                  "moussaka"),
+        ("boulette de viande en sauce",      "boulette-sauce"),
+        # rest « farci » et « viande » maintenant tolérés (prefix combos réels 2025)
+        ("Escalope \u00e0 la cr\u00e8me + Pomme farci",
+                                             "escalope-creme"),
+        # NOTA : « Dolma à la viande hachée » reste None — doulma est un nom 1-mot
+        # qui ne peut pas utiliser la branche prefix+allowance (len>=2). C'est un
+        # cas d'alias à ajouter en Phase 4, PAS un échec ALLOW.
+    ],
+)
+def test_farci_viande_do_not_break_prefixes(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── Alias fréquence≥2 validés (Phase 3 – priorisation couverture) ─────
+# Seuls les textes 2025 revenant >=2× et étant de VRAIS alias (même plat,
+# variante orthographique) ont été ajoutés, à la suite de la priorisation par
+# fréquence. Les cas 1× restants = plats distincts → phase catalogue dédiée.
+@pytest.mark.parametrize(
+    "input_text, expected_id",
+    [
+        ("Titli au poulet",                  "tlitli-poulet"),
+        ("Titli",                            "tlitli-poulet"),
+        ("Cuisses de poulet d\u00e9soss\u00e9e + Pomme espagnole",
+                                             "cuisse-poulet-tandoori"),
+        ("Chittha djadje",                   "chtitha-djaj"),
+    ],
+)
+def test_validated_frequency_aliases(input_text, expected_id):
+    assert _id(input_text) == expected_id
+
+
+# ───────── Phase 6 : enrichissement alias TF-IDF/SVD au serving ──────────────
+# Seules les lignes à id canonique explicite (plats sélectionnés via le
+# dashboard) sont enrichies avec leurs alias. Les lignes répliquées sans id et
+# les textes non mappés restent inchangés (invariant training préservé).
+from src.menu_optimization.menu_catalog_py import (
+    _build_menu_combined,
+    _build_menu_combined_enriched,
+)
+
+import pandas as pd
+
+
+class TestPhase6Enrichment:
+    def _row(self, p1, p1_id=None):
+        return pd.DataFrame({
+            "plat_principal_1": [p1],
+            "plat_principal_2": [""],
+            "plat_principal_1_id": [p1_id],
+            "plat_principal_2_id": [None],
+        })
+
+    def test_dashboard_row_with_id_is_enriched(self):
+        # « Poulet rôti » est un nom canonique du catalogue (id explicite).
+        row = self._row("Poulet rôti", "poulet-roti")
+        raw = _build_menu_combined(row).iloc[0]
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        # l'enrichissement concatène des alias → texte plus long
+        assert enriched.startswith(raw)
+        assert len(enriched.split()) > len(raw.split())
+
+    def test_replay_row_without_id_stays_identical(self):
+        # replay historique : pas d'id → texte brut inchangé (invariant training)
+        row = self._row("Poulet rôti", None)
+        raw = _build_menu_combined(row).iloc[0]
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        assert enriched == raw
+
+    def test_unmappable_text_not_enriched(self):
+        # texte non mappé au catalogue → aucun alias à injecter → inchangé
+        row = self._row("Plat totalement inconnu du catalogue", "totally-unknown")
+        raw = _build_menu_combined(row).iloc[0]
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        assert enriched == raw
+
+    def test_enrichment_uses_aliases_from_catalog(self):
+        row = self._row("Cuisse de poulet grillée", "cuisse-poulet-grille")
+        enriched = _build_menu_combined_enriched(row).iloc[0]
+        # au moins un mot d'alias répété au-delà du nom canonique seul
+        assert "grille" in enriched
+        assert "cuisse" in enriched and "poulet" in enriched

@@ -1,5 +1,6 @@
 """Operational data storage (JSON file-based) + service clock lifecycle."""
 import json
+import os
 from datetime import date, datetime, time as datetime_time
 from pathlib import Path
 from typing import Optional
@@ -7,7 +8,7 @@ from typing import Optional
 from .settings import load_settings
 
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "operational"
+DATA_DIR = Path(os.environ.get("RIE_DATA_DIR", Path(__file__).resolve().parent.parent / "data")) / "operational"
 
 
 def _ensure_dir():

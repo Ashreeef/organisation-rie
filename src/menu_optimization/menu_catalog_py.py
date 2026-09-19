@@ -102,16 +102,73 @@ def get_catalog() -> dict:
 
 
 def _normalize(s) -> str:
-    """Minuscules, sans accents, espaces réduits (miroir de menu_cleaning)."""
+    """Minuscules, sans accents, espaces réduits (miroir de menu_cleaning).
+
+    Les ligatures françaises (œ → oe, æ → ae) sont décomposées explicitement :
+    la normalisation Unicode (NFD/NFKD) les laisse intactes, ce qui ferait
+    diverger « bœuf » et « boeuf » (miroir de iconv() côté TS).
+    """
     if s is None or pd.isna(s):
         return ""
     s = unicodedata.normalize("NFKD", str(s))
     s = "".join(c for c in s if not unicodedata.combining(c))
     s = re.sub(r"['’]", " ", s)
     s = s.lower()
-    s = re.sub(r"\s*[/&|]\s*", " + ", s)
+    s = s.replace("œ", "oe").replace("æ", "ae")
+    s = re.sub(r"\s*[/&|+]\s*", " + ", s)
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+
+# Tokens autorisés dans le « reste » d'une correspondance préfixe (mirror TS ALLOW)
+# Tenir synchronisé avec gen_menu_catalog_ts.py ALLOW_TOKENS.
+ALLOW_TOKENS = frozenset({
+    "+", "et", "avec", "de", "a", "la", "le", "les", "au", "aux", "du", "des", "en",
+    "riz", "pilaf", "basmati", "chairia", "libanais", "oriental", "paella", "creole", "indien", "rouge",
+    "pomme", "pommes", "puree", "vapeur", "sautee", "rissolee", "rissolees", "croquette", "croquettes",
+    "boulangere", "espagnole", "angroise", "coucha", "hangroise", "dauphine", "bordelaise", "epicee",
+    "frite", "frites", "friture", "paille",
+    "legumes", "ratatouille", "jardiniere", "haricots", "haricot", "verts", "petits",
+    "sauce", "tartare", "mexicaine", "mexicain", "curry", "moutarde", "barbecue", "fromage",
+    "piquante", "vierge", "financiere", "creme", "aufour",
+    "pates", "tagliatelles", "spaghetti", "risotto",
+    "chekchouka", "batata", "fliou", "salade", "sale", "dauphinoises", "gratin", "grillee", "grillees",
+    # Élargissement Phase 3 — tokens révélés par la catégorisation des unmatched
+    # 2025-data (variantes d'accompagnements). Chacun vérifié EN MOT-ISOLÉ avant ajout :
+    # find_dish(token)=None (règle short-search ne les résout PAS → pas un nom de plat).
+    # farci/viande : sûrs aussi — aucun alias ne COMMENCE par ces tokens (toujours 2e+) et
+    # ils servent de rest légitime (« Escalope à la crème + Pomme farci », « Dolma à la viande »).
+    "pate", "chinoise", "cha3ria", "viande", "farci", "flou", "italienne",
+    "champignons", "pistou", "panee", "napolitaine", "julienne", "tchekhouka",
+    "chakhchouka", "bourghoul", "terre", "florentine", "maison", "provencale",
+    "turque", "rotte", "pasta", "tagliatelle", "tourte", "clafoutis", "l",
+    # Élargissement Phase catalogue — accompagnements/sauces révélés par la
+    # curation des 88 unmatched 2025. Chacun vérifié EN MOT-ISOLÉ avant ajout :
+    # find_dish(token)=None. farcie/farcies : aucun alias ne COMMENCE par ces
+    # tokens (cf. « Sole farcie », « Poulet farci »). d : apostrophe « d'aubergine ».
+    "epinards", "sautes", "sautees", "ail", "ecrasee", "cocktail", "maklouba",
+    "farcies", "farcie", "bordelaises", "patate", "flanc", "carotte",
+    "aubergine", "roquefort", "d",
+})
+
+
+def _score(a_tokens, t_tokens):
+    """Scoring miroir TS score(): exact > prefix+allowance > short-search."""
+    if not a_tokens or not t_tokens:
+        return 0
+    if len(a_tokens) == len(t_tokens) and all(x == y for x, y in zip(a_tokens, t_tokens)):
+        return 100 + len(a_tokens)
+    if (
+        len(a_tokens) >= 2
+        and len(t_tokens) > len(a_tokens)
+        and all(a_tokens[i] == t_tokens[i] for i in range(len(a_tokens)))
+        and all(tok in ALLOW_TOKENS for tok in t_tokens[len(a_tokens) :])
+    ):
+        return len(a_tokens)
+    if len(t_tokens) == 1 and len(a_tokens) >= 2 and a_tokens[0] == t_tokens[0]:
+        if t_tokens[0] not in ALLOW_TOKENS:
+            return 0.5
+    return 0
 
 
 def _split_components(norm: str):
@@ -168,34 +225,37 @@ def _best_dish_name_for_index(catalog: dict):
 
 
 def find_dish(free_text, explicit_id: Optional[str] = None) -> Optional[dict]:
-    """Retourne le dish canonique correspondant à ``free_text`` (ou None)."""
+    """Retourne le dish canonique correspondant à ``free_text`` (ou None).
+
+    Logique stricte miroir TS findDishByName : exact > préfixe+allowance > short-search.
+    La recherche floue (rapidfuzz/difflib) est volontairement supprimée Phase 3 :
+    les textes ambigus deviennent « unmapped » et remontent en Phase 4 comme
+    candidats d'alias ou de nouveaux dishes.
+    """
     catalog = get_catalog()
-    if not free_text or pd.isna(free_text):
+    if not free_text or (isinstance(free_text, float) and pd.isna(free_text)):
         return None
-    text = str(free_text).strip()
-    norm = _normalize(text)
 
     if explicit_id:
         for d in catalog["dishes"]:
             if d["id"] == explicit_id:
                 return d
 
-    idx = _get_dish_index(catalog)
-    # Alias / nom exact (le plat_principal_1 est souvent 'plat + accompagnement')
-    if norm in idx:
-        return idx[norm][0]
+    norm = _normalize(free_text)
+    if not norm:
+        return None
 
-    # Cherche un alias ou nom inclus dans la chaîne
-    for key, dishes in idx.items():
-        if key and (key in norm or norm in key):
-            return dishes[0]
-
-    # Fuzzy sur les noms canoniques + alias
-    candidates = _best_dish_name_for_index(catalog)
-    best = _fuzzy_search(norm, candidates)
-    if best:
-        return idx[best][0]
-    return None
+    tokens = norm.split()
+    best = None
+    best_score = 0
+    for d in catalog["dishes"]:
+        cands = [_normalize(d["name"])] + [_normalize(a) for a in d["aliases"]]
+        for a in cands:
+            s = _score(a.split(), tokens)
+            if s > best_score:
+                best_score = s
+                best = d
+    return best
 
 
 def _fuzzy_search(norm: str, candidates) -> Optional[str]:
@@ -439,6 +499,58 @@ def _build_menu_combined(df: pd.DataFrame) -> pd.Series:
             df["plat_principal_2"].fillna("")).apply(_clean_combined)
 
 
+def _enrich_text_with_aliases(text: str) -> str:
+    """Enrichit un texte de plat canonique avec ses alias du catalogue pour
+    aligner la distribution TF-IDF sur celle de l'entraînement (texte messi).
+
+    Utilisé UNIQUEMENT pour les plats sélectionnés via le dashboard (id canonique
+    explicite) : le SVD a été ajusté sur le texte historique brut (variantes
+    orthographiques, abréviations), alors que le planner fournit désormais des
+    noms canoniques propres. Concaténer quelques alias réduit ce décalage.
+    """
+    if not text or not str(text).strip():
+        return text
+    dish = find_dish(text)
+    if dish is None:
+        return text
+    alias_part = " ".join(dish.get("aliases", [])[:3])
+    if alias_part:
+        return f"{text} {alias_part}"
+    return text
+
+
+def _has_explicit_dish_id(df: pd.DataFrame, col: str) -> pd.Series:
+    """Masque : True si la ligne porte un id canonique explicite pour ``col``
+    (colonne plat_principal_X_id remplie — sélection dashboard, pas replay
+    historique)."""
+    id_col = f"{col}_id"
+    if id_col not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df[id_col].apply(
+        lambda v: v is not None and not pd.isna(v) and str(v).strip() != "" and str(v).strip().lower() != "nan"
+    )
+
+
+def _build_menu_combined_enriched(df: pd.DataFrame) -> pd.Series:
+    """_build_menu_combined avec enrichissement alias, pour le serving live.
+
+    Seules les lignes à id canonique explicite (plats sélectionnés via le
+    dashboard) sont enrichies. Les lignes historiques répliquées (replay) n'ont
+    pas d'id : elles gardent le texte brut, identique à l'entraînement — ce qui
+    préserve la reproduction exacte des features texte historique
+    (voir test_persisted_transformers_reproduce_training).
+    """
+    src = df["plat_principal_1"].fillna("")
+    enrich_1 = _has_explicit_dish_id(df, "plat_principal_1")
+    p1 = src.where(~enrich_1, src.apply(_enrich_text_with_aliases))
+
+    src2 = df["plat_principal_2"].fillna("")
+    enrich_2 = _has_explicit_dish_id(df, "plat_principal_2")
+    p2 = src2.where(~enrich_2, src2.apply(_enrich_text_with_aliases))
+
+    return (p1 + " " + p2).apply(_clean_combined)
+
+
 def _fit_target_map(df: pd.DataFrame, col: str, target: str,
                     n_folds: int = 5, smoothing: float = 20.0, seed: int = 42):
     """Encodeur cible type KFold (même logique qu'à l'entraînement).
@@ -541,7 +653,12 @@ def apply_menu_text_features(df: pd.DataFrame, fitted: dict) -> pd.DataFrame:
         return out
 
     # Transform (pas de re-fit) avec le bundle validé.
-    tfidf_mat = fitted["vectorizer"].transform(menu_combined.replace("", "empty"))
+    # Phase 6 : enrichir le texte des plats sélectionnés via le dashboard
+    # (id canonique explicite) avec leurs alias, pour rapprocher la distribution
+    # TF-IDF du texte historique sur lequel le SVD a été ajusté. Les lignes
+    # répliquées sans id restent en texte brut (reproduction exacte training).
+    menu_combined_enriched = _build_menu_combined_enriched(out)
+    tfidf_mat = fitted["vectorizer"].transform(menu_combined_enriched.replace("", "empty"))
     tfidf_comps = fitted["svd"].transform(tfidf_mat)
     for i in range(_SVD_COMPONENTS):
         out[f"tfidf_svd_{i}"] = tfidf_comps[:, i]

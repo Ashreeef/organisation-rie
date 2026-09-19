@@ -57,6 +57,10 @@ class OperationalEntry(BaseModel):
     planned_meals: int = 0
     actual_meals: int = 0
     presence: int = 0
+    # Vrai quand la présence du jour a été confirmée/corrigée manuellement par
+    # le gestionnaire (override) : la prévision est alors recalculée avec cette
+    # valeur au lieu de la prédiction du modèle tant que l'override est actif.
+    presence_overridden: bool = False
     forecast: int = 0
     menu: list[dict] = []
     bilan: dict = {}
@@ -75,6 +79,13 @@ class PlannedMealsUpdate(BaseModel):
     presence: Optional[int] = None
     forecast: Optional[int] = None
     menu: Optional[list[dict]] = None
+
+
+class PresenceOverrideRequest(BaseModel):
+    presence: int
+    # "doit-on l'appliquer ?" — distinct de la valeur : permet au gestionnaire
+    # de corriger la présence du jour sans que le refresh ne la réécrase.
+    override: bool = True
 
 
 class BilanSubmission(BaseModel):
@@ -135,6 +146,21 @@ class MenuPlan(BaseModel):
     plat_principal_2: str = ""
     plat_principal_1_id: str = ""
     plat_principal_2_id: str = ""
+
+
+class UnknownDishLog(BaseModel):
+    """Enregistrement d'un plat principal tapé librement et non résolu au
+    catalogue."""
+    text: str
+    count: int = 1
+    first_seen: str = ""
+    last_seen: str = ""
+
+
+class RegenerateFeaturesRequest(BaseModel):
+    """Bornes (inclusives) de la fenêtre dont on veut régénérer les features."""
+    start: str
+    end: str
 
 
 class SettingsUpdate(BaseModel):

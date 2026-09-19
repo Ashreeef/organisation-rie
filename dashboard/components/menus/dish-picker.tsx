@@ -35,6 +35,13 @@ interface DishPickerProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /**
+   * texte tapé dans la recherche qui ne matche aucun plat du
+   * catalogue. Si fourni, le composant affiche « pas dans le catalogue » et
+   * propose au gestionnaire d'enregistrer le candidat (log fréquence) au lieu
+   * d'un rejet silencieux. Non fourni pour entrees/plat_principal_2 (permissifs).
+   */
+  onProposeUnknown?: (text: string) => void;
 }
 
 const RATIO_BADGE_STYLE: Record<string, string> = {
@@ -59,6 +66,7 @@ export function DishPicker({
   placeholder,
   disabled,
   className,
+  onProposeUnknown,
 }: DishPickerProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -136,9 +144,34 @@ export function DishPicker({
             onValueChange={setQuery}
           />
           <CommandList>
-            <CommandEmpty className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
-              <SearchX className="h-4 w-4" /> Aucun plat ne correspond
-            </CommandEmpty>
+            {onProposeUnknown && filtered.length === 0 && query.trim() ? (
+              <div className="px-3 py-3">
+                <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+                  <SearchX className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                  <div className="min-w-0 space-y-1.5">
+                    <p className="font-medium text-foreground">
+                      «&nbsp;{query.trim()}&nbsp;» n&apos;est pas dans le catalogue
+                    </p>
+                    <p className="text-muted-foreground">
+                      Choisissez un plat de la liste, ou signalez-le comme
+                      candidat pour l&apos;ajouter.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => onProposeUnknown(query.trim())}
+                    >
+                      Proposer ce plat
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <CommandEmpty className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+                <SearchX className="h-4 w-4" /> Aucun plat ne correspond
+              </CommandEmpty>
+            )}
             {groups.map((g) => {
               const items = grouped.get(g.label);
               if (!items || items.length === 0) return null;

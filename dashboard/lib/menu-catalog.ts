@@ -33,7 +33,7 @@ export const DISHES: Dish[] = [
     id: "poulet-roti",
     name: "Poulet rôti",
     category: "volaille_poulet",
-    aliases: ["Poulet roti", "Poulet rôti", "Poulet rôti + Chekchouka", "Poulet rôti + Pomme purée", "Poulet rôti + Poulet grillée"],
+    aliases: ["Poulet roti", "Poulet rôti", "Poulet rôti + Chekchouka", "Poulet rôti + Pomme purée", "Poulet rôti + Poulet grillée", "Poulet roti + Haricot verts sauté et risotto", "Poulet roti + pomme de terre en sauce gratinée"],
     keywords: ["poulet", "roti", "rôti", "grillé"],
     typical_ratio: 0.6,
     ratio_effect: "moyen",
@@ -55,7 +55,7 @@ export const DISHES: Dish[] = [
     id: "cuisse-poulet-roti",
     name: "Cuisse de poulet rôtie",
     category: "volaille_poulet",
-    aliases: ["Cuisse de poulet rôtie", "Cuisse de poulet rôti", "Riz + Cuisse de poulet", "Cuisse de poulet rôti + Croquette de riz sauce mexicaine", "Cuisse de poulet"],
+    aliases: ["Cuisse de poulet rôtie", "Cuisse de poulet rôti", "Riz + Cuisse de poulet", "Cuisse de poulet rôti + Croquette de riz sauce mexicaine", "Cuisse de poulet", "Pilon de poulet"],
     keywords: ["cuisse", "poulet", "rôti", "roti"],
     typical_ratio: 0.6,
     ratio_effect: "moyen",
@@ -66,7 +66,7 @@ export const DISHES: Dish[] = [
     id: "cuisse-poulet-tandoori",
     name: "Cuisse de poulet désossée tandoori",
     category: "volaille_poulet",
-    aliases: ["Cuisse de poulet désossée tandoori", "Cuisse de poulet désossé tandoori", "Cuisse de poulet désossée"],
+    aliases: ["Cuisse de poulet désossée tandoori", "Cuisse de poulet désossé tandoori", "Cuisse de poulet désossée", "Cuisses de poulet désossée + Pomme espagnole", "Cuisses de poulet désossée", "Cuisses de poulet désossée tandoor + Fenouille à la crème + pomme de chee", "Cuisses de poulet + épinards et pomme farcie", "Cuisses désossée"],
     keywords: ["cuisse", "poulet", "désossée", "tandoori"],
     typical_ratio: 0.64,
     ratio_effect: "élevé",
@@ -77,7 +77,7 @@ export const DISHES: Dish[] = [
     id: "cuisse-poulet-farcie",
     name: "Cuisse de poulet farcie",
     category: "volaille_poulet",
-    aliases: ["Cuisse de poulet farci", "Cuisse de poulet farcie"],
+    aliases: ["Cuisse de poulet farci", "Cuisse de poulet farcie", "Cuisses de poulet farci"],
     keywords: ["cuisse", "poulet", "farci", "farcie"],
     typical_ratio: 0.65,
     ratio_effect: "élevé",
@@ -110,7 +110,7 @@ export const DISHES: Dish[] = [
     id: "poulet-mexicaine",
     name: "Poulet à la mexicaine",
     category: "volaille_poulet",
-    aliases: ["Poulet à la Mexicaine", "Poulet à la mexicaine", "Blanc de poulet à la sauce mexicaine"],
+    aliases: ["Poulet à la Mexicaine", "Poulet à la mexicaine", "Blanc de poulet à la sauce mexicaine", "Emincé de poulet à la mexicaine", "Emincé de poulet à la mexicaine + frites"],
     keywords: ["poulet", "mexicaine", "mexicain"],
     typical_ratio: 0.59,
     ratio_effect: "moyen",
@@ -121,7 +121,7 @@ export const DISHES: Dish[] = [
     id: "blanc-poulet-farci",
     name: "Blanc de poulet farci",
     category: "volaille_poulet",
-    aliases: ["Blanc de poulet farcie", "Blanc de poulet farci", "Blanc de poulet Cordon bleu sauce mexicaine + Riz Paella"],
+    aliases: ["Blanc de poulet farcie", "Blanc de poulet farci", "Blanc de poulet Cordon bleu sauce mexicaine + Riz Paella", "Blanc de poulet gratiné", "Blanc de poulet farci aux épinards"],
     keywords: ["blanc", "poulet", "farci"],
     typical_ratio: 0.63,
     ratio_effect: "moyen",
@@ -143,7 +143,7 @@ export const DISHES: Dish[] = [
     id: "blanc-poulet-curry",
     name: "Blanc de poulet au curry",
     category: "volaille_poulet",
-    aliases: ["Blanc de poulet au curry", "Blanc de Poulet en Sauce"],
+    aliases: ["Blanc de poulet au curry", "Blanc de Poulet en Sauce", "Emincé de poulet au curry", "Emincé de poulet sauce au curry"],
     keywords: ["blanc", "poulet", "curry"],
     typical_ratio: 0.63,
     ratio_effect: "moyen",
@@ -231,7 +231,7 @@ export const DISHES: Dish[] = [
     id: "escalope-panee",
     name: "Escalope panée",
     category: "volaille_dinde",
-    aliases: ["Escalope panné sauce piquante", "Escalope pané sauce tartare", "Escalope panée sauce tartare", "Escalope panée + Pomme espagnole", "Escalope panée à la sauce tartare", "Escalope panée sauce Mexicaine", "Escalope panée + Riz oriental", "Escalope panée avec sauce méxicaine + frites", "Escalope panée sauce Cocktail + Riz maklouba", "Escalope panée à la milanaise + pomme de terre épicée", "Escalope pané + Riz oriental"],
+    aliases: ["Escalope panné sauce piquante", "Escalope pané sauce tartare", "Escalope panée sauce tartare", "Escalope panée + Pomme espagnole", "Escalope panée à la sauce tartare", "Escalope panée sauce Mexicaine", "Escalope panée + Riz oriental", "Escalope panée avec sauce méxicaine + frites", "Escalope panée sauce Cocktail + Riz maklouba", "Escalope panée à la milanaise + pomme de terre épicée", "Escalope pané + Riz oriental", "Escalope de poulet pané avec sauce mexicaine"],
     keywords: ["escalope", "panée", "pané", "frite"],
     typical_ratio: 0.6,
     ratio_effect: "moyen",
@@ -242,7 +242,7 @@ export const DISHES: Dish[] = [
     id: "escalope-creme",
     name: "Escalope à la crème",
     category: "volaille_dinde",
-    aliases: ["Escalope à la crème", "Escalope à la créme", "Escalope en sauce + Pomme sautée + Légumes", "Escalope en sauce", "Escalope sauce Curry"],
+    aliases: ["Escalope à la crème", "Escalope à la créme", "Escalope en sauce + Pomme sautée + Légumes", "Escalope en sauce", "Escalope sauce Curry", "Escalope à la dersa", "Escalope à la sauce moutarde"],
     keywords: ["escalope", "crème", "sauce"],
     typical_ratio: 0.64,
     ratio_effect: "élevé",
@@ -264,7 +264,7 @@ export const DISHES: Dish[] = [
     id: "steak-hache-dinde",
     name: "Steak haché de dinde",
     category: "volaille_dinde",
-    aliases: ["Steak haché de dinde", "Steak haché de dinde gratiné", "Steak haché de dinde gratinée", "Steak hachée de dinde gratinée", "Steak haché de dinde sauce fromage", "Steak hachée de dinde gratinée + Hachi Parmantier", "Steak Haché de Dinde + Riz aux petits légumes", "Steak Haché de Dinde Gratinée", "Galette de dinde gratinée au fromage"],
+    aliases: ["Steak haché de dinde", "Steak haché de dinde gratiné", "Steak haché de dinde gratinée", "Steak hachée de dinde gratinée", "Steak haché de dinde sauce fromage", "Steak hachée de dinde gratinée + Hachi Parmantier", "Steak Haché de Dinde + Riz aux petits légumes", "Steak Haché de Dinde Gratinée", "Steak haché pané", "Steak hachée de dinde"],
     keywords: ["steak", "haché", "dinde", "gratiné", "fromage"],
     typical_ratio: 0.63,
     ratio_effect: "moyen",
@@ -286,7 +286,7 @@ export const DISHES: Dish[] = [
     id: "paupiette-dinde",
     name: "Paupiette de dinde",
     category: "volaille_dinde",
-    aliases: ["Paupiette de dinde", "Kefta à la Turque + Paupiette de dinde"],
+    aliases: ["Paupiette de dinde", "Kefta à la Turque + Paupiette de dinde", "Pauptette de dinde"],
     keywords: ["paupiette", "dinde"],
     typical_ratio: 0.64,
     ratio_effect: "élevé",
@@ -330,7 +330,7 @@ export const DISHES: Dish[] = [
     id: "kefta",
     name: "Kefta (marocaine / turque / libanaise)",
     category: "viande_rouge",
-    aliases: ["Kefta à la marocaine", "Kefta à la Turque", "Kefta à la turc", "Kefta à la Libanaise", "Kefta à la Libanaise + Boulgour à la Turque", "Kefta en sauce"],
+    aliases: ["Kefta à la marocaine", "Kefta à la Turque", "Kefta à la turc", "Kefta à la Libanaise", "Kefta à la Libanaise + Boulgour à la Turque", "Kefta en sauce", "Kefta aux olives", "Kefta grillée", "Kbab à la turque"],
     keywords: ["kefta", "viande", "hachée", "marocaine", "turque", "libanaise"],
     typical_ratio: 0.63,
     ratio_effect: "moyen",
@@ -374,7 +374,7 @@ export const DISHES: Dish[] = [
     id: "moussaka",
     name: "Moussaka viande",
     category: "viande_rouge",
-    aliases: ["Moussaka viande", "Moussaka Viande", "Moussaka viande hachée"],
+    aliases: ["Moussaka viande", "Moussaka Viande", "Moussaka viande hachée", "Moussaka à la viande hachée"],
     keywords: ["moussaka", "viande", "aubergine"],
     typical_ratio: 0.59,
     ratio_effect: "moyen",
@@ -385,7 +385,7 @@ export const DISHES: Dish[] = [
     id: "emince-veau",
     name: "Émincé de veau à la mexicaine",
     category: "viande_rouge",
-    aliases: ["Emincé de veau à la méxicaine + Riz", "Emincé de Veau + Pâtes à l'italienne", "Sauté de Veau + Pomme mousseline", "Sauté de Veau + Riz pilaf"],
+    aliases: ["Emincé de veau à la méxicaine + Riz", "Emincé de Veau + Pâtes à l'italienne", "Sauté de Veau + Pomme mousseline", "Sauté de Veau + Riz pilaf", "Emincé à la mexicaine"],
     keywords: ["émincé", "veau", "mexicaine"],
     typical_ratio: 0.61,
     ratio_effect: "moyen",
@@ -396,7 +396,7 @@ export const DISHES: Dish[] = [
     id: "rouleau-viande",
     name: "Roulé de viande",
     category: "viande_rouge",
-    aliases: ["Roulé de viande + Riz"],
+    aliases: ["Roulé de viande + Riz", "Roulé de dinde sauce aux olives et champignons"],
     keywords: ["roulé", "viande"],
     typical_ratio: 0.59,
     ratio_effect: "moyen",
@@ -407,7 +407,7 @@ export const DISHES: Dish[] = [
     id: "sole-farcie",
     name: "Sole farcie",
     category: "poisson",
-    aliases: ["Sole farcie", "Sole Farci", "Sole Farci + Légume à la chinois", "Sole farcie à la duxelle + pates aux petits légumes", "Sole Farci + Pâtes à l'italienne"],
+    aliases: ["Sole farcie", "Sole Farci", "Sole Farci + Légume à la chinois", "Sole farcie à la duxelle + pates aux petits légumes", "Sole Farci + Pâtes à l'italienne", "Sol farci"],
     keywords: ["sole", "farcie", "poisson"],
     typical_ratio: 0.64,
     ratio_effect: "élevé",
@@ -418,7 +418,7 @@ export const DISHES: Dish[] = [
     id: "sole-panee",
     name: "Sole panée",
     category: "poisson",
-    aliases: ["Sole panée", "Sole panée sauce tartare", "Sole panée + sauce tartare", "Sole panée avec sauce tartare + Légumes à la provençale", "Sole panée à la sauce cocktail + Pomme au curry", "Mille feuille de poisson", "Poisson panée sauce tartare", "Poisson panée sauce tartare + Riz Pilaf"],
+    aliases: ["Sole panée", "Sole panée sauce tartare", "Sole panée + sauce tartare", "Sole panée avec sauce tartare + Légumes à la provençale", "Sole panée à la sauce cocktail + Pomme au curry", "Mille feuille de poisson", "Poisson panée sauce tartare", "Poisson panée sauce tartare + Riz Pilaf", "Poisson pané avec sauce tartare", "Poisson pané sauce cocktail", "Filet de sol pané"],
     keywords: ["sole", "panée", "poisson", "frite"],
     typical_ratio: 0.62,
     ratio_effect: "moyen",
@@ -451,7 +451,7 @@ export const DISHES: Dish[] = [
     id: "sole-sauce-vierge",
     name: "Sole en sauce vierge",
     category: "poisson",
-    aliases: ["Sole en sauce vierges + Boulette de Viande", "Sole sauce vierge + pomme boulangère", "Sole en Sauce Vierge + Riz"],
+    aliases: ["Sole en sauce vierges + Boulette de Viande", "Sole sauce vierge + pomme boulangère", "Sole en Sauce Vierge + Riz", "Sole au four sauce napolitaine"],
     keywords: ["sole", "sauce vierge", "poisson"],
     typical_ratio: 0.62,
     ratio_effect: "moyen",
@@ -517,7 +517,7 @@ export const DISHES: Dish[] = [
     id: "calamar",
     name: "Calamar en sauce",
     category: "poisson",
-    aliases: ["Calamar en Sauce", "Calamar en sauce + Chawarma", "Calamar Farci", "Calamar farci + Riz"],
+    aliases: ["Calamar en Sauce", "Calamar en sauce + Chawarma", "Calamar Farci", "Calamar farci + Riz", "Calamar en sauce + Blanc de poulet farci", "Calamar en sauce + Brochette panée"],
     keywords: ["calamar", "calamars", "fruits de mer", "farci"],
     typical_ratio: 0.63,
     ratio_effect: "moyen",
@@ -528,7 +528,7 @@ export const DISHES: Dish[] = [
     id: "sardine",
     name: "Sardine",
     category: "poisson",
-    aliases: ["Sardine en sauce", "Chtitha Sardine"],
+    aliases: ["Sardine en sauce", "Chtitha Sardine", "Sardine friture"],
     keywords: ["sardine", "poisson"],
     typical_ratio: 0.59,
     ratio_effect: "moyen",
@@ -550,7 +550,7 @@ export const DISHES: Dish[] = [
     id: "mernousse",
     name: "Mernousse",
     category: "poisson",
-    aliases: ["Mernousse (POISSON) + Riz", "Mernousse"],
+    aliases: ["Mernousse (POISSON) + Riz", "Mernousse", "Mermouse + Spaghetti à la napolitaine", "Mermousse + riz à la mexicaine"],
     keywords: ["mernousse", "poisson"],
     typical_ratio: 0.6,
     ratio_effect: "moyen",
@@ -561,7 +561,7 @@ export const DISHES: Dish[] = [
     id: "merlan",
     name: "Merlan au four",
     category: "poisson",
-    aliases: ["Merlan au four + pomme boulangère"],
+    aliases: ["Merlan au four + pomme boulangère", "Merlan à la dersa", "Merlan à la napolitaine", "Merlan pané", "Merlon en sauce + Croquettes des légumes + Fenouille"],
     keywords: ["merlan", "poisson", "four"],
     typical_ratio: 0.62,
     ratio_effect: "moyen",
@@ -572,7 +572,7 @@ export const DISHES: Dish[] = [
     id: "poisson-four",
     name: "Poisson au four",
     category: "poisson",
-    aliases: ["Poisson au four", "Sol au four sauce citronnée + Croquette de riz"],
+    aliases: ["Poisson au four", "Sol au four sauce citronnée + Croquette de riz", "Poisson au fours"],
     keywords: ["poisson", "four", "grillé"],
     typical_ratio: 0.62,
     ratio_effect: "moyen",
@@ -605,7 +605,7 @@ export const DISHES: Dish[] = [
     id: "tlitli-poulet",
     name: "Tlitli au poulet",
     category: "traditionnel",
-    aliases: ["Tlitli au poulet", "Tlitli au Poulet"],
+    aliases: ["Tlitli au poulet", "Tlitli au Poulet", "Titli au poulet", "Titli"],
     keywords: ["tlitli", "poulet", "pâtes", "traditionnel"],
     typical_ratio: 0.6,
     ratio_effect: "moyen",
@@ -638,7 +638,7 @@ export const DISHES: Dish[] = [
     id: "chtitha-djaj",
     name: "Chtitha Djaj",
     category: "traditionnel",
-    aliases: ["Chtitha Djaj", "Chtitha djadj", "Chtitha djaj"],
+    aliases: ["Chtitha Djaj", "Chtitha djadj", "Chtitha djaj", "Chittha djadje", "Chittha djaj", "Chittha DjaDj"],
     keywords: ["chtitha", "djaj", "djadj", "poulet", "traditionnel"],
     typical_ratio: 0.6,
     ratio_effect: "moyen",
@@ -671,7 +671,7 @@ export const DISHES: Dish[] = [
     id: "brochette-royale",
     name: "Brochette Royale",
     category: "traditionnel",
-    aliases: ["Brochette Royale", "Brochette + Frite", "Brochette grillée Sauce BBQ + Frite", "Brochette de poulet grillée", "Brochette de poulet grillée + Légumes grillés", "Brochette de poulet", "Brochette grillée + gratin de pomme de terre", "Brochette pané avec sauce mexicaine + Pomme sautée", "Brochette mixte + Frite", "Brochette Royale en sauce BBQ", "Brochette Royale + Brochette à la Turque"],
+    aliases: ["Brochette Royale", "Brochette + Frite", "Brochette grillée Sauce BBQ + Frite", "Brochette de poulet grillée", "Brochette de poulet grillée + Légumes grillés", "Brochette de poulet", "Brochette grillée + gratin de pomme de terre", "Brochette pané avec sauce mexicaine + Pomme sautée", "Brochette mixte + Frite", "Brochette Royale en sauce BBQ", "Brochette Royale + Brochette à la Turque", "Brochette grillée", "Brochette grillée + bourghoul à la turque", "Brochette de kefta"],
     keywords: ["brochette", "royale", "grillade", "poulet", "frite"],
     typical_ratio: 0.64,
     ratio_effect: "élevé",
@@ -715,7 +715,7 @@ export const DISHES: Dish[] = [
     id: "tajine-jelbana",
     name: "Tajine jelbana",
     category: "traditionnel",
-    aliases: ["Tajine jelbana", "Tajine Jelbana", "Tajine haricot vert"],
+    aliases: ["Tajine jelbana", "Tajine Jelbana", "Tajine haricot vert", "Tajine djebana"],
     keywords: ["tajine", "jelbana", "petits pois", "traditionnel"],
     typical_ratio: 0.61,
     ratio_effect: "moyen",
@@ -781,7 +781,7 @@ export const DISHES: Dish[] = [
     id: "doulma",
     name: "Doulma",
     category: "traditionnel",
-    aliases: ["Doulma", "Dolma"],
+    aliases: ["Doulma", "Dolma", "Dolma viande", "Dolma à la viande hachée"],
     keywords: ["doulma", "dolma", "farci", "légumes", "traditionnel"],
     typical_ratio: 0.61,
     ratio_effect: "moyen",
@@ -814,7 +814,7 @@ export const DISHES: Dish[] = [
     id: "chawarma",
     name: "Chawarma",
     category: "traditionnel",
-    aliases: ["Chawarma", "Chawarma Libanais"],
+    aliases: ["Chawarma", "Chawarma Libanais", "Chawarma + Spaghetti chinoise"],
     keywords: ["chawarma", "chawaarma", "libanais", "viande"],
     typical_ratio: 0.66,
     ratio_effect: "élevé",
@@ -825,10 +825,10 @@ export const DISHES: Dish[] = [
     id: "chiche-taouk",
     name: "Chiche Taouk",
     category: "traditionnel",
-    aliases: ["Chiche Taouk", "Chichtaouk"],
+    aliases: ["Chiche Taouk", "Chichtaouk", "Chiche kebab sauce piquante"],
     keywords: ["chiche", "taouk", "poulet", "brochette", "libanais"],
-    typical_ratio: 0.33,
-    ratio_effect: "faible",
+    typical_ratio: 0.63,
+    ratio_effect: "moyen",
     is_traditional: true,
     is_premium: false,
   },
@@ -839,6 +839,17 @@ export const DISHES: Dish[] = [
     aliases: ["Haricot Rouge au Bœuf"],
     keywords: ["haricot", "rouge", "bœuf", "légumineuse"],
     typical_ratio: 0.58,
+    ratio_effect: "moyen",
+    is_traditional: true,
+    is_premium: false,
+  },
+  {
+    id: "navarin-boeuf",
+    name: "Navarin de bœuf",
+    category: "traditionnel",
+    aliases: ["Navarin", "Navarin de bœuf", "Bœuf Navarin", "Boeuf Navarin", "Navarin de boeuf", "Steak de bœuf en sauce"],
+    keywords: ["navarin", "bœuf", "légumes", "traditionnel"],
+    typical_ratio: 0.6,
     ratio_effect: "moyen",
     is_traditional: true,
     is_premium: false,
@@ -880,7 +891,7 @@ export const DISHES: Dish[] = [
     id: "sandwich-frite",
     name: "Sandwich + Frite",
     category: "street_food",
-    aliases: ["Sandwich + Frite", "Sandwiche", "Sandwich", "Escalope Haché gratinée + Frite", "Goujonnette Sauce tartare + Gratin de Pomme"],
+    aliases: ["Sandwich + Frite", "Sandwiche", "Sandwich", "Escalope Haché gratinée + Frite", "Goujonnette Sauce tartare + Gratin de Pomme", "Sandwichs", "Hamburger + frites", "Humburger + Frite"],
     keywords: ["sandwich", "frite", "fast food"],
     typical_ratio: 0.67,
     ratio_effect: "élevé",
@@ -913,7 +924,7 @@ export const DISHES: Dish[] = [
     id: "vol-au-vent",
     name: "Vol au vent sauce financière",
     category: "plats_chef",
-    aliases: ["Vol au vent sauce financière", "Vol au Vent sauce financière"],
+    aliases: ["Vol au vent sauce financière", "Vol au Vent sauce financière", "Vol au vent au poulet", "Vol au vent sauce à la viande"],
     keywords: ["vol au vent", "financière", "feuilleté", "sauce"],
     typical_ratio: 0.61,
     ratio_effect: "moyen",
@@ -930,6 +941,39 @@ export const DISHES: Dish[] = [
     ratio_effect: "très élevé",
     is_traditional: true,
     is_premium: true,
+  },
+  {
+    id: "kebda-mcharmela",
+    name: "Kebda Mcharmela",
+    category: "traditionnel",
+    aliases: ["Kebda Mcharmela", "Kebda Mchermela", "Kebda mcharmela + frites"],
+    keywords: ["kebda", "mcharmela", "mchermela", "foie"],
+    typical_ratio: 0.6,
+    ratio_effect: "moyen",
+    is_traditional: true,
+    is_premium: false,
+  },
+  {
+    id: "tajine-lebhar",
+    name: "Tajine lebhar",
+    category: "traditionnel",
+    aliases: ["Tajine lebhar"],
+    keywords: ["tajine", "lebhar", "mer"],
+    typical_ratio: 0.6,
+    ratio_effect: "moyen",
+    is_traditional: true,
+    is_premium: false,
+  },
+  {
+    id: "tajine-houte",
+    name: "Tajine l'houte",
+    category: "traditionnel",
+    aliases: ["Tajine l'houte"],
+    keywords: ["tajine", "houte", "poisson"],
+    typical_ratio: 0.6,
+    ratio_effect: "moyen",
+    is_traditional: true,
+    is_premium: false,
   }
 ]
 
@@ -989,22 +1033,45 @@ export const ACCOMPANIMENTS: Accompaniment[] = [
   }
 ]
 
+const ALLOW = new Set(["+", "a", "ail", "angroise", "au", "aubergine", "aufour", "aux", "avec", "barbecue", "basmati", "batata", "bordelaise", "bordelaises", "boulangere", "bourghoul", "carotte", "cha3ria", "chairia", "chakhchouka", "champignons", "chekchouka", "chinoise", "clafoutis", "cocktail", "coucha", "creme", "creole", "croquette", "croquettes", "curry", "d", "dauphine", "dauphinoises", "de", "des", "du", "ecrasee", "en", "epicee", "epinards", "espagnole", "et", "farci", "farcie", "farcies", "financiere", "flanc", "fliou", "florentine", "flou", "frite", "frites", "friture", "fromage", "gratin", "grillee", "grillees", "hangroise", "haricot", "haricots", "indien", "italienne", "jardiniere", "julienne", "l", "la", "le", "legumes", "les", "libanais", "maison", "maklouba", "mexicain", "mexicaine", "moutarde", "napolitaine", "oriental", "paella", "paille", "panee", "pasta", "patate", "pate", "pates", "petits", "pilaf", "piquante", "pistou", "pomme", "pommes", "provencale", "puree", "ratatouille", "risotto", "rissolee", "rissolees", "riz", "roquefort", "rotte", "rouge", "salade", "sale", "sauce", "sautee", "sautees", "sautes", "spaghetti", "tagliatelle", "tagliatelles", "tartare", "tchekhouka", "terre", "tourte", "turque", "vapeur", "verts", "viande", "vierge"])
+
 function iconv(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+  return s.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/œ/g, 'oe').replace(/æ/g, 'ae')
+    .replace(/['']/g, ' ')
+    .replace(/[\u2018\u2019]/g, ' ')
+    .replace(/[+&|]/g, ' + ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-/** Find a dish by partial name or alias match. */
+function score(a: string[], t: string[]): number {
+  if (!a.length || !t.length) return 0
+  if (a.length === t.length && a.every((v, i) => v === t[i])) return 100 + a.length
+  if (a.length >= 2 && t.length > a.length && a.every((v, i) => v === t[i])) {
+    const rest = t.slice(a.length)
+    if (rest.every(tok => ALLOW.has(tok))) return a.length
+  }
+  if (t.length === 1 && a.length >= 2 && a[0] === t[0] && !ALLOW.has(t[0])) return 0.5
+  return 0
+}
+
+/** Find a dish by name or alias (strict: exact, prefix+allowance, short-search). */
 export function findDishByName(input: string): Dish | undefined {
-  const normalized = iconv(input)
-  if (!normalized) return undefined
-  return DISHES.find((d) => {
-    const dn = iconv(d.name)
-    if (dn === normalized) return true
-    return d.aliases.some((a) => {
-      const an = iconv(a)
-      return an && (an === normalized || an.includes(normalized) || normalized.includes(an))
-    })
-  })
+  const n = iconv(input)
+  if (!n) return undefined
+  const t = n.split(/\s+/).filter(Boolean)
+  let bestScore = 0, best: Dish | undefined = undefined
+  for (const d of DISHES) {
+    const cands = [iconv(d.name), ...d.aliases.map(iconv)]
+    for (const a of cands) {
+      const s = score(a.split(/\s+/).filter(Boolean), t)
+      if (s > bestScore) { bestScore = s; best = d }
+    }
+  }
+  return best
 }
 
 /** Get menu category string for the analytics page. */
@@ -1025,8 +1092,8 @@ export function getDishesByCategory(): Record<DishCategory, Dish[]> {
 }
 
 export const MENU_STATS = {
-  totalDishes: 82,
+  totalDishes: 86,
   premiumDishes: 13,
-  traditionalDishes: 30,
+  traditionalDishes: 34,
   highRatioDishes: 22,
 }

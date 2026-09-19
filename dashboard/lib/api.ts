@@ -34,7 +34,7 @@ import { isoDate, operationalWeekDays } from '@/lib/operational-calendar';
 /*  Backend helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 function delay<T>(data: T, ms = 200): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), ms));
@@ -96,11 +96,11 @@ function roundToOne(n: number): number {
 }
 
 // Normalise un taux de gaspillage en pourcentage : les anciennes entrées le
-// stockent sous forme de fraction (≤ 1, ex. 0.0469) — le live utilise un
-// pourcentage (ex. 1.3).
+// The backend always persists a percentage (see /api/operations). Some older
+// UI code stored a fraction (≤1); that heuristic is ambiguous with genuine
+// sub-1% rates (0.27% → stored 0.3), so we trust the stored value as-is.
 function normalizeWasteRate(rate: number | undefined): number {
-  const r = rate ?? 0;
-  return r <= 1 ? r * 100 : r;
+  return rate ?? 0;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -137,67 +137,88 @@ function setCachedToday(state: TodayState): TodayState {
   return state;
 }
 
+// Forme brute de la réponse /api/operations/today (et de l'override de
+// présence, qui renvoie le même OperationalResponse).
+interface OperationalResponseRaw {
+  date: string;
+  status: string;
+  bilan_closed?: boolean;
+  next_operational_day?: string;
+  service_phase?: string;
+  service_start?: string;
+  service_end?: string;
+  bilan_deadline?: string;
+  operational: {
+    status?: string;
+    planned_meals?: number;
+    actual_meals?: number;
+    prepared?: number;
+    served?: number;
+    presence_overridden?: boolean;
+    comment?: string | null;
+    bilan?: {
+      date?: string;
+      prepared?: number;
+      served?: number;
+      remaining?: number;
+      wasteRate?: number;
+      comment?: string | null;
+      menu?: { categoryId: string; dishId: string }[];
+      confirmedAt?: string;
+    } | null;
+  } | null;
+  forecast?: {
+    date: string; forecast_available?: boolean; unavailable_reason?: string | null;
+    office_present: number; predicted_ratio: number;
+    employees_count: number; recommended_meals: number;
+    confidence_lower: number; confidence_upper: number;
+    confidence_level: string; recommendation_note: string;
+    forecast_stale?: boolean; menu_fingerprint?: string;
+    blend_scores: { lgb: number; xgb: number; catboost: number };
+    is_ramadan?: boolean; is_holiday?: boolean; holiday_name?: string | null;
+    menu_planned?: boolean;
+  } | null;
+}
+
+function mapTodayFromOperational(res: OperationalResponseRaw): TodayState {
+  const op = res.operational ?? {};
+  const bilan = op.bilan
+    ? {
+        date: op.bilan.date ?? res.date,
+        prepared: op.bilan.prepared ?? 0,
+        served: op.bilan.served ?? 0,
+        remaining: op.bilan.remaining ?? 0,
+        wasteRate: op.bilan.wasteRate ?? 0,
+        comment: op.bilan.comment ?? undefined,
+        menu: op.bilan.menu ?? [],
+        confirmedAt: op.bilan.confirmedAt,
+      }
+    : null;
+  return {
+    date: res.date,
+    status: mapStatus(op.status ?? res.status),
+    forecast: null,
+    plannedMeals: op.planned_meals ?? 0,
+    actualMealsServed: op.actual_meals ?? 0,
+    overrideReason: null,
+    presenceOverridden: Boolean(op.presence_overridden),
+    bilan,
+    // Fourni par le backend (source unique) : bilan clos + prochaine journée
+    // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
+    bilanClosed: Boolean(res.bilan_closed),
+    nextOperationalDay: res.next_operational_day || todayKey(),
+    // Horloge du service — valeurs calculées par le backend depuis /settings.
+    servicePhase: mapPhase(res.service_phase),
+    serviceStart: res.service_start ?? '12:30',
+    serviceEnd: res.service_end ?? '13:30',
+    bilanDeadline: res.bilan_deadline ?? '15:00',
+  };
+}
+
 async function fetchTodayState(): Promise<TodayState> {
   try {
-    const res = await apiGet<{
-      date: string;
-      status: string;
-      bilan_closed?: boolean;
-      next_operational_day?: string;
-      service_phase?: string;
-      service_start?: string;
-      service_end?: string;
-      bilan_deadline?: string;
-      operational: {
-        status?: string;
-        planned_meals?: number;
-        actual_meals?: number;
-        prepared?: number;
-        served?: number;
-        comment?: string | null;
-        bilan?: {
-          date?: string;
-          prepared?: number;
-          served?: number;
-          remaining?: number;
-          wasteRate?: number;
-          comment?: string | null;
-          menu?: { categoryId: string; dishId: string }[];
-          confirmedAt?: string;
-        } | null;
-      } | null;
-    }>('/api/operations/today');
-    const op = res.operational ?? {};
-    const bilan = op.bilan
-      ? {
-          date: op.bilan.date ?? res.date,
-          prepared: op.bilan.prepared ?? 0,
-          served: op.bilan.served ?? 0,
-          remaining: op.bilan.remaining ?? 0,
-          wasteRate: op.bilan.wasteRate ?? 0,
-          comment: op.bilan.comment ?? undefined,
-          menu: op.bilan.menu ?? [],
-          confirmedAt: op.bilan.confirmedAt,
-        }
-      : null;
-    return setCachedToday({
-      date: res.date,
-      status: mapStatus(op.status ?? res.status),
-      forecast: null,
-      plannedMeals: op.planned_meals ?? 0,
-      actualMealsServed: op.actual_meals ?? 0,
-      overrideReason: null,
-      bilan,
-      // Fourni par le backend (source unique) : bilan clos + prochaine journée
-      // de service (vendredi/samedi exclus). L'UI n'a pas à recalculer ceci.
-      bilanClosed: Boolean(res.bilan_closed),
-      nextOperationalDay: res.next_operational_day || todayKey(),
-      // Horloge du service — valeurs calculées par le backend depuis /settings.
-      servicePhase: mapPhase(res.service_phase),
-      serviceStart: res.service_start ?? '12:30',
-      serviceEnd: res.service_end ?? '13:30',
-      bilanDeadline: res.bilan_deadline ?? '15:00',
-    });
+    const res = await apiGet<OperationalResponseRaw>('/api/operations/today');
+    return setCachedToday(mapTodayFromOperational(res));
   } catch {
     return setCachedToday({
       date: todayKey(),
@@ -206,6 +227,7 @@ async function fetchTodayState(): Promise<TodayState> {
       plannedMeals: 0,
       actualMealsServed: 0,
       overrideReason: null,
+      presenceOverridden: false,
       bilan: null,
       bilanClosed: false,
       nextOperationalDay: todayKey(),
@@ -456,6 +478,27 @@ export const api = {
   async setActualMealsServed(count: number): Promise<TodayState> {
     await apiPost(`/api/operations/${todayKey()}/planned`, { planned_meals: count });
     return fetchTodayState();
+  },
+
+  // Confirme/corrige la présence bureau du jour : l'override est persisté côté
+  // backend et la prévision est immédiatement recalculée avec cette valeur.
+  // `presence=null` retire l'override et revient à la prédiction du modèle.
+  async setOfficePresence(presence: number | null): Promise<{ state: TodayState; forecast: ForecastResult }> {
+    try {
+      const res = await apiPost<OperationalResponseRaw>(
+        '/api/operations/today/presence-override',
+        { presence: presence ?? 0, override: presence !== null },
+      );
+      return {
+        state: mapTodayFromOperational(res),
+        forecast: res.forecast ? mapBackendForecast(res.forecast) : fallbackForecast(todayKey()),
+      };
+    } catch {
+      return {
+        state: await fetchTodayState(),
+        forecast: fallbackForecast(todayKey()),
+      };
+    }
   },
 
   /* ── Tomorrow preparation (backend + forecast) ──────────── */
@@ -802,8 +845,30 @@ export const api = {
     return data;
   },
 
-  async regenerateFeatures(): Promise<{ ok: boolean; message?: string }> {
-    return { ok: true, message: 'La tâche quotidienne régénérera les features. Pour un résultat immédiat, exécutez : python -m src.forecasting.daily_features --days 14' };
+  // un plat principal tapé librement et non reconnu devient un
+  // candidat à examiner (backend log avec fréquence de rencontre).
+  async logUnknownDish(text: string): Promise<{
+    known: boolean;
+    dish_id?: string | null;
+    text_norm: string;
+    count: number;
+    first_seen: string;
+    last_seen: string;
+  }> {
+    return await apiPost('/api/menus/unknown-dish', { text });
+  },
+
+  // Régénère les features live des menus planifiés de la fenêtre [start, end]
+  // côté backend, puis recharge les prévisions si demandé.
+  async regenerateFeatures(start: string, end: string): Promise<{ ok: boolean; message?: string; regenerated?: number; failed?: string[] }> {
+    try {
+      return await apiPost<{ ok: boolean; regenerated: number; failed: string[] }>(
+        '/api/menus/regenerate',
+        { start, end },
+      );
+    } catch {
+      return { ok: false, message: 'Régénération indisponible — vérifiez le backend.' };
+    }
   },
 
   /* ── Backend operations (legacy) ────────────────────────── */
