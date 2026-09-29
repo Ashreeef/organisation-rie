@@ -1,4 +1,4 @@
-﻿# start-dev.ps1 — Demarrage en mode developpement (RIE Intelligence)
+# start-dev.ps1 — Demarrage en mode developpement (RIE Intelligence)
 # Lance FastAPI + Next.js (dev) puis l'application Electron.
 # A la sortie de l'application Electron, les processus demarres par ce
 # script (FastAPI / Next.js) sont arretees (aucun processus orphelin).
@@ -94,8 +94,18 @@ if (Test-Port $PortFastAPI) {
     Write-Host "[1/3] FastAPI deja actif sur :$PortFastAPI (conserve)" -ForegroundColor Yellow
 } else {
     Write-Host "[1/3] Demarrage de FastAPI sur :$PortFastAPI (cache)..."
-    $startedApi = Start-Hidden "conda" "run -n DM_ENV uvicorn api.main:app --port $PortFastAPI --no-access-log" $Root
-    Write-Host "     PID: $($startedApi.Id) (conda run)"
+    $venvUvicorn = Join-Path $Root ".venv\Scripts\uvicorn.exe"
+    $altVenvUvicorn = Join-Path $Root "venv\Scripts\uvicorn.exe"
+    if (Test-Path $venvUvicorn) {
+        $startedApi = Start-Hidden $venvUvicorn "api.main:app --port $PortFastAPI --no-access-log" $Root
+        Write-Host "     PID: $($startedApi.Id) (.venv uvicorn)"
+    } elseif (Test-Path $altVenvUvicorn) {
+        $startedApi = Start-Hidden $altVenvUvicorn "api.main:app --port $PortFastAPI --no-access-log" $Root
+        Write-Host "     PID: $($startedApi.Id) (venv uvicorn)"
+    } else {
+        $startedApi = Start-Hidden "uvicorn" "api.main:app --port $PortFastAPI --no-access-log" $Root
+        Write-Host "     PID: $($startedApi.Id) (system uvicorn)"
+    }
 }
 
 # 2. Next.js (dev)
