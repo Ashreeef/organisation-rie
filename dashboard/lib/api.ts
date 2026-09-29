@@ -34,7 +34,12 @@ import { isoDate, operationalWeekDays } from '@/lib/operational-calendar';
 /*  Backend helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL !== undefined
+    ? process.env.NEXT_PUBLIC_API_URL
+    : typeof window !== 'undefined'
+    ? ''
+    : 'http://127.0.0.1:8000';
 
 function delay<T>(data: T, ms = 200): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(data), ms));

@@ -22,6 +22,7 @@ Usage:
     # With authentication
     ENABLE_AUTHENTICATION=true SECRET_KEY=your-secret-key uvicorn api.main:app --port 8000
 """
+import os
 import time
 import hashlib
 import logging
@@ -76,9 +77,15 @@ app = FastAPI(
     debug=True,
 )
 
+cors_origins_env = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+allowed_origins = [orig.strip() for orig in cors_origins_env.split(",") if orig.strip()]
+# If wildcard * or empty, allow all
+if "*" in allowed_origins or not allowed_origins:
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

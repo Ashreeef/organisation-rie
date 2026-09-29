@@ -6,7 +6,8 @@ scipy==1.13.0
 # Modeling
 scikit-learn==1.7.2
 lightgbm==4.3.0
-xgboost==3.1.2 
+xgboost==3.1.2
+catboost>=1.2.5
 optuna==3.6.1
 
 # Menu / text features
